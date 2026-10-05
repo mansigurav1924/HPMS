@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+supabase
+psycopg[binary]
+python-jose
+pydantic-settings
+slowapi
+pytest
+httpx
+python-multipart
