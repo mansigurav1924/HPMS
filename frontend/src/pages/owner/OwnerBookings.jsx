@@ -4,14 +4,14 @@ import { PageTransition, EmptyState, Skeleton, Card, Badge } from '../../compone
 import { AlertCircle, FileText } from 'lucide-react';
 
 export default function OwnerBookings() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     fetch(import.meta.env.VITE_API_URL + '/bookings', {
-      headers: { 'Authorization': 'Bearer ' + user.token }
+      headers: { 'Authorization': 'Bearer ' + token }
     })
       .then(res => {
         if (!res.ok) throw new Error('Failed to load data');

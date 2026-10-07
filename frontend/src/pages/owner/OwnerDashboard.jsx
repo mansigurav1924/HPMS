@@ -84,7 +84,7 @@ export default function OwnerDashboard() {
           <p className="text-gray-500 text-lg mb-8 max-w-xl mx-auto">
             You don't have any properties set up yet. Get started by adding your first property to track occupancy, bookings, and more.
           </p>
-          <Link to="/properties/add" className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl">
+          <Link to="/owner/properties/new" className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl">
             <PlusCircle size={20} />
             Add your first property
           </Link>
@@ -409,7 +409,7 @@ export default function OwnerDashboard() {
             <Card className="p-5 shadow-sm border border-gray-100 bg-gradient-to-br from-blue-600 to-indigo-700 text-white">
               <h3 className="font-bold mb-4">Quick Actions</h3>
               <div className="grid grid-cols-2 gap-3">
-                <Link to="/properties/add" className="flex flex-col items-center justify-center p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors backdrop-blur-sm text-center gap-2">
+                <Link to="/owner/properties/new" className="flex flex-col items-center justify-center p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors backdrop-blur-sm text-center gap-2">
                   <Home size={20} />
                   <span className="text-xs font-medium">Add Property</span>
                 </Link>
@@ -417,7 +417,7 @@ export default function OwnerDashboard() {
                   <MessageSquare size={20} />
                   <span className="text-xs font-medium">Post Notice</span>
                 </Link>
-                <Link to="/properties" className="flex flex-col items-center justify-center p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors backdrop-blur-sm text-center gap-2">
+                <Link to="/owner/properties" className="flex flex-col items-center justify-center p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors backdrop-blur-sm text-center gap-2">
                   <BedDouble size={20} />
                   <span className="text-xs font-medium">Manage Rooms</span>
                 </Link>

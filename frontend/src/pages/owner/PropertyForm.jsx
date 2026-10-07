@@ -3,7 +3,7 @@ import { useAuth } from '../../AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Button, Card, PageTransition } from '../../components/ui';
 import { Check } from 'lucide-react';
-import GoogleMapsProvider from '../../components/maps/GoogleMapsProvider';
+import GoogleMapsProvider, { hasGoogleMaps } from '../../components/maps/GoogleMapsProvider';
 import MapView from '../../components/maps/MapView';
 import PropertyMarker from '../../components/maps/PropertyMarker';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
@@ -15,7 +15,7 @@ const FACILITIES = [
   'AC', 'Geyser', 'Gym', 'Study Room', 'Housekeeping', 'Power Backup',
 ];
 
-function AddressInput({ value, onChange, onSelect }) {
+function InnerAddressInput({ value, onChange, onSelect }) {
   const inputRef = useRef(null);
   const places = useMapsLibrary('places');
 
@@ -50,6 +50,21 @@ function AddressInput({ value, onChange, onSelect }) {
       required
     />
   );
+}
+
+function AddressInput({ value, onChange, onSelect }) {
+  if (!hasGoogleMaps) {
+    return (
+      <input
+        value={value}
+        onChange={(e) => { onChange(e.target.value); onSelect(e.target.value); }}
+        className="pill-input !py-2.5 w-full bg-gray-50 border-dashed"
+        placeholder="Type address manually (Google Maps disabled)..."
+        required
+      />
+    );
+  }
+  return <InnerAddressInput value={value} onChange={onChange} onSelect={onSelect} />;
 }
 
 export default function PropertyForm() {
@@ -159,8 +174,9 @@ export default function PropertyForm() {
                   <option value="pg">PG</option>
                 </select>
               </div>
-              <div>{field('Booking Mode *', 'booking_mode', 'text', { as: 'select' /* fallback, custom below */ })}
-                <select value={form.booking_mode} onChange={e => set('booking_mode', e.target.value)} className="pill-select w-full !py-2.5 -mt-[4.5rem]">
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Booking Mode *</label>
+                <select value={form.booking_mode} onChange={e => set('booking_mode', e.target.value)} className="pill-select w-full !py-2.5">
                   <option value="approval">Approval Required</option>
                   <option value="instant">Instant Booking</option>
                 </select>

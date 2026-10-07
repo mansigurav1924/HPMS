@@ -272,41 +272,148 @@ def get_student_dashboard(
     # Student dashboard stats (active tenancies, open complaints, notices, unread notifications)
     claims = require_role(request, "student")
     uid = get_uid(claims)
-    with db.cursor() as cur:
-        # active tenancy
+        # 1. Tenancy state
         cur.execute("""
-            SELECT t.tenancy_id, t.property_id, p.name as property_name, t.status 
-            FROM tenancies t JOIN properties p ON t.property_id = p.property_id
+            SELECT t.tenancy_id, t.property_id, p.name as property_name, t.status, 
+                   t.check_in_date, t.expected_checkout_date, t.agreement_url, t.deposit_status,
+                   r.room_number, b.bed_number
+            FROM tenancies t 
+            JOIN properties p ON t.property_id = p.property_id
+            LEFT JOIN rooms r ON t.room_id = r.room_id
+            LEFT JOIN beds b ON t.bed_id = b.bed_id
             WHERE t.student_id = %s AND t.status IN ('active', 'notice')
+            ORDER BY t.created_at DESC LIMIT 1
         """, (uid,))
-        tenancies = cur.fetchall()
+        tenancy_row = cur.fetchone()
+        tenancy = dict(zip([d[0] for d in cur.description], tenancy_row)) if tenancy_row else None
         
-        # open complaints
+        # 2. Booking state (if no active tenancy)
+        booking = None
+        if not tenancy:
+            cur.execute("""
+                SELECT b.booking_id, b.property_id, p.name as property_name, b.status,
+                       b.requested_at, (b.requested_at + interval '48 hours') as owner_response_due_at,
+                       b.move_in_date, p.latitude, p.longitude, u.name as owner_name, u.phone as owner_phone,
+                       r.room_number, bd.bed_number
+                FROM bookings b
+                JOIN properties p ON b.property_id = p.property_id
+                JOIN users u ON p.owner_id = u.user_id
+                LEFT JOIN rooms r ON b.room_id = r.room_id
+                LEFT JOIN beds bd ON b.bed_id = bd.bed_id
+                WHERE b.student_id = %s
+                ORDER BY b.created_at DESC LIMIT 1
+            """, (uid,))
+            booking_row = cur.fetchone()
+            booking = dict(zip([d[0] for d in cur.description], booking_row)) if booking_row else None
+
+        # 3. Needs attention
+        # - user verified
+        cur.execute("SELECT email_verified, phone_verified FROM users WHERE user_id = %s", (uid,))
+        user_row = cur.fetchone()
+        email_ver = user_row[0] if user_row else False
+        phone_ver = user_row[1] if user_row else False
+        
+        # - profile complete & minor consent
+        cur.execute("""
+            SELECT id_proof_url, college_id_url, guardian_name, guardian_phone, guardian_email, date_of_birth, guardian_consent_verified
+            FROM student_profiles WHERE student_id = %s
+        """, (uid,))
+        prof_row = cur.fetchone()
+        profile_incomplete = not prof_row or not all(prof_row[:5])
+        
+        is_minor = False
+        minor_missing_consent = False
+        if prof_row and prof_row[5]:
+            from datetime import date
+            today = date.today()
+            dob = prof_row[5]
+            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+            if age < 18:
+                is_minor = True
+                if not prof_row[6]:
+                    minor_missing_consent = True
+
+        # - resolved complaints waiting for rating
+        cur.execute("""
+            SELECT complaint_id, resolved_at FROM complaints 
+            WHERE student_id = %s AND status = 'resolved' AND rating IS NULL
+            ORDER BY resolved_at DESC LIMIT 1
+        """, (uid,))
+        complaint_to_rate_row = cur.fetchone()
+        complaint_to_rate = dict(zip(['complaint_id', 'resolved_at'], complaint_to_rate_row)) if complaint_to_rate_row else None
+        
+        # - unreviewed checkouts
+        cur.execute("""
+            SELECT t.tenancy_id, t.property_id, p.name as property_name
+            FROM tenancies t
+            JOIN properties p ON t.property_id = p.property_id
+            LEFT JOIN reviews r ON t.property_id = r.property_id AND r.student_id = t.student_id
+            WHERE t.student_id = %s AND t.status = 'checked_out' AND r.review_id IS NULL
+            ORDER BY t.actual_checkout_date DESC LIMIT 1
+        """, (uid,))
+        unreviewed_checkout_row = cur.fetchone()
+        unreviewed_checkout = dict(zip(['tenancy_id', 'property_id', 'property_name'], unreviewed_checkout_row)) if unreviewed_checkout_row else None
+
+        # 4. Widgets
+        # Complaints
         cur.execute("SELECT COUNT(*) FROM complaints WHERE student_id = %s AND status NOT IN ('resolved', 'closed')", (uid,))
         open_complaints = cur.fetchone()[0]
-        
-        # unread notifications
+        cur.execute("""
+            SELECT complaint_id, title, status, created_at FROM complaints 
+            WHERE student_id = %s ORDER BY created_at DESC LIMIT 3
+        """, (uid,))
+        complaints = [dict(zip([d[0] for d in cur.description], row)) for row in cur.fetchall()]
+
+        # Notifications
         cur.execute("SELECT COUNT(*) FROM notifications WHERE user_id = %s AND read_at IS NULL", (uid,))
         unread_notifications = cur.fetchone()[0]
-        
-        # latest notices for their active property
+        cur.execute("""
+            SELECT notification_id, title, message, created_at, read_at FROM notifications 
+            WHERE user_id = %s ORDER BY created_at DESC LIMIT 5
+        """, (uid,))
+        notifications = [dict(zip([d[0] for d in cur.description], row)) for row in cur.fetchall()]
+
+        # Notices
         notices = []
-        if tenancies:
+        if tenancy:
             cur.execute("""
-                SELECT n.notice_id, n.title, n.posted_at
-                FROM notices n
-                WHERE n.property_id = %s AND n.expires_at > now()
-                ORDER BY n.posted_at DESC LIMIT 3
-            """, (tenancies[0][1],))
-            columns = [desc[0] for desc in cur.description]
-            notices = [dict(zip(columns, row)) for row in cur.fetchall()]
-            
+                SELECT notice_id, title, posted_at, expires_at
+                FROM notices WHERE property_id = %s AND expires_at > now()
+                ORDER BY posted_at DESC LIMIT 3
+            """, (tenancy['property_id'],))
+            notices = [dict(zip([d[0] for d in cur.description], row)) for row in cur.fetchall()]
+
+        # Wishlist
+        cur.execute("""
+            SELECT w.property_id, p.name, p.city, p.status
+            FROM wishlist w JOIN properties p ON w.property_id = p.property_id
+            WHERE w.student_id = %s ORDER BY w.created_at DESC LIMIT 3
+        """, (uid,))
+        wishlist = [dict(zip([d[0] for d in cur.description], row)) for row in cur.fetchall()]
+
         return {
             "data": {
-                "active_tenancies": [{"tenancy_id": t[0], "property_name": t[2], "status": t[3]} for t in tenancies],
-                "open_complaints": open_complaints,
-                "unread_notifications": unread_notifications,
-                "latest_notices": notices
+                "hero": {
+                    "tenancy": tenancy,
+                    "booking": booking
+                },
+                "attention": {
+                    "minor_missing_consent": minor_missing_consent,
+                    "email_verified": email_ver,
+                    "phone_verified": phone_ver,
+                    "profile_incomplete": profile_incomplete,
+                    "complaint_to_rate": complaint_to_rate,
+                    "unreviewed_checkout": unreviewed_checkout
+                },
+                "widgets": {
+                    "open_complaints": open_complaints,
+                    "complaints": complaints,
+                    "unread_notifications": unread_notifications,
+                    "notifications": notifications,
+                    "notices": notices,
+                    "wishlist": wishlist
+                },
+                "payments_enabled": False
             }
         }
 

@@ -31,7 +31,7 @@ export default function Login() {
         } else if (data.role === 'owner') {
           navigate('/owner');
         } else {
-          navigate('/student/profile');
+          navigate('/student/dashboard');
         }
       } else {
         setError(data.detail || 'Login failed');

@@ -29,6 +29,7 @@ import NoticesPage from './pages/student/NoticesPage';
 import NotificationsPage from './pages/student/NotificationsPage';
 import ReviewsPage from './pages/student/ReviewsPage';
 import ProfilePage from './pages/student/ProfilePage';
+import StudentDashboard from './pages/student/StudentDashboard';
 
 import OwnerDashboard from './pages/owner/OwnerDashboard';
 import OwnerBookings from './pages/owner/OwnerBookings';
@@ -90,6 +91,7 @@ function MainContent() {
             <Route path="/student/notifications" element={<ProtectedRoute role="student"><NotificationsPage /></ProtectedRoute>} />
             <Route path="/student/reviews" element={<ProtectedRoute role="student"><ReviewsPage /></ProtectedRoute>} />
             <Route path="/student/profile" element={<ProtectedRoute role="student"><ProfilePage /></ProtectedRoute>} />
+            <Route path="/student/dashboard" element={<ProtectedRoute role="student"><StudentDashboard /></ProtectedRoute>} />
           </Route>
 
           {/* Owner Routes (DashboardLayout) */}

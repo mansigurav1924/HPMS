@@ -60,6 +60,7 @@ export default function StudentLayout() {
                       <Link to="/search" className="px-4 py-2 hover:bg-gray-50 rounded-xl transition-colors">Find Hostels</Link>
                       {user.role === 'student' && (
                         <>
+                          <Link to="/student/dashboard" className="px-4 py-2 hover:bg-gray-50 rounded-xl transition-colors">Dashboard</Link>
                           <Link to="/wishlist" className="px-4 py-2 hover:bg-gray-50 rounded-xl transition-colors">My Wishlist</Link>
                           <Link to="/student/stay" className="px-4 py-2 hover:bg-gray-50 rounded-xl transition-colors">My Stay</Link>
                           <Link to="/student/rent" className="px-4 py-2 hover:bg-gray-50 rounded-xl transition-colors">Rent & Dues</Link>
@@ -102,6 +103,7 @@ export default function StudentLayout() {
               <>
                 {user.role === 'student' && (
                   <>
+                    <Link to="/student/dashboard" onClick={() => setMenuOpen(false)} className="font-bold">Dashboard</Link>
                     <Link to="/wishlist" onClick={() => setMenuOpen(false)} className="font-bold">Wishlist</Link>
                     <Link to="/student/stay" onClick={() => setMenuOpen(false)} className="font-bold">My Stay</Link>
                   </>

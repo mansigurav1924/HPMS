@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Map, useMap } from '@vis.gl/react-google-maps';
+import { hasGoogleMaps } from './GoogleMapsProvider';
+import MapFallback from './MapFallback';
 
-export default function MapView({ 
+function InnerMapView({ 
   center = { lat: 28.6139, lng: 77.2090 }, 
   zoom = 12, 
   children,
@@ -60,4 +62,11 @@ export default function MapView({
       </Map>
     </div>
   );
+}
+
+export default function MapView(props) {
+  if (!hasGoogleMaps) {
+    return <MapFallback error="Google Maps API Key Missing" />;
+  }
+  return <InnerMapView {...props} />;
 }
