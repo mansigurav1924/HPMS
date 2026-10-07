@@ -1,5 +1,10 @@
-import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
+import { AnimatePresence, motion } from 'framer-motion';
+
+import StudentLayout from './layouts/StudentLayout';
+import DashboardLayout from './layouts/DashboardLayout';
+
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import OwnerKYC from './pages/owner/OwnerKYC';
@@ -14,6 +19,35 @@ import WishlistPage from './pages/student/WishlistPage';
 import ComparePage from './pages/student/ComparePage';
 import StudentComplaintsPage from './pages/student/StudentComplaintsPage';
 import OwnerComplaintsPage from './pages/owner/OwnerComplaintsPage';
+import ComingSoon from './pages/ComingSoon';
+
+// Generated Pages
+import BookingsPage from './pages/student/BookingsPage';
+import StayPage from './pages/student/StayPage';
+import RentPage from './pages/student/RentPage';
+import NoticesPage from './pages/student/NoticesPage';
+import NotificationsPage from './pages/student/NotificationsPage';
+import ReviewsPage from './pages/student/ReviewsPage';
+import ProfilePage from './pages/student/ProfilePage';
+
+import OwnerDashboard from './pages/owner/OwnerDashboard';
+import OwnerBookings from './pages/owner/OwnerBookings';
+import OwnerTenants from './pages/owner/OwnerTenants';
+import OwnerRent from './pages/owner/OwnerRent';
+import OwnerNotices from './pages/owner/OwnerNotices';
+import OwnerReviews from './pages/owner/OwnerReviews';
+import OwnerReports from './pages/owner/OwnerReports';
+
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminProperties from './pages/admin/AdminProperties';
+import AdminDuplicates from './pages/admin/AdminDuplicates';
+import AdminUsers from './pages/admin/AdminUsers';
+import AdminReviews from './pages/admin/AdminReviews';
+import AdminReports from './pages/admin/AdminReports';
+import AdminAuditLog from './pages/admin/AdminAuditLog';
+import AdminNotifications from './pages/admin/AdminNotifications';
+import AdminDataAccess from './pages/admin/AdminDataAccess';
+import AdminColleges from './pages/admin/AdminColleges';
 
 function ProtectedRoute({ children, role }) {
   const { user } = useAuth();
@@ -22,62 +56,81 @@ function ProtectedRoute({ children, role }) {
   return children;
 }
 
-function Layout({ children }) {
-  const { user, logout } = useAuth();
+function MainContent() {
+  const location = useLocation();
+  
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <nav className="bg-white shadow p-4 flex justify-between items-center sticky top-0 z-10">
-        <div className="flex items-center gap-6">
-          <Link to="/search" className="flex items-center gap-2.5 text-xl font-extrabold text-indigo-600 hover:text-indigo-800 transition">
-            <img src="/favicon.svg" alt="HPMS Logo" className="w-8 h-8 rounded-lg shadow-sm" />
-            <span>HPMS Portal</span>
-          </Link>
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={location.pathname}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -12 }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="h-full flex flex-col"
+      >
+        <Routes location={location}>
+          <Route path="/" element={<Navigate to="/search" replace />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
 
-          <div className="flex gap-4 text-sm font-medium text-gray-600">
-            <Link to="/search" className="hover:text-indigo-600">Find Hostels & PGs</Link>
-            {user?.role === 'student' && (
-              <>
-                <Link to="/wishlist" className="hover:text-indigo-600">My Wishlist</Link>
-                <Link to="/complaints" className="hover:text-indigo-600">My Complaints</Link>
-              </>
-            )}
-            {user?.role === 'owner' && (
-              <>
-                <Link to="/owner/properties" className="hover:text-indigo-600">My Properties</Link>
-                <Link to="/owner/kyc" className="hover:text-indigo-600">KYC Status</Link>
-                <Link to="/owner/complaints" className="hover:text-indigo-600">Complaints</Link>
-              </>
-            )}
-            {user?.role === 'admin' && (
-              <>
-                <Link to="/admin/owners" className="hover:text-indigo-600">Verification Queue</Link>
-                <Link to="/admin/escalated" className="hover:text-indigo-600">Escalated</Link>
-              </>
-            )}
-          </div>
-        </div>
-        <div>
-          {user ? (
-            <div className="flex gap-4 items-center">
-              <span className="text-sm text-gray-700 font-medium">
-                Hello, {user.name} <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded capitalize">{user.role}</span>
-              </span>
-              <button onClick={logout} className="text-sm font-semibold text-red-600 hover:bg-red-50 px-2 py-1 rounded transition">
-                Logout
-              </button>
-            </div>
-          ) : (
-            <div className="flex gap-4 items-center">
-              <Link to="/login" className="text-indigo-600 font-semibold hover:text-indigo-800 transition">Login</Link>
-              <Link to="/signup" className="bg-indigo-600 text-white px-4 py-2 rounded font-semibold hover:bg-indigo-700 shadow-md transition">Sign Up</Link>
-            </div>
-          )}
-        </div>
-      </nav>
-      <main className="p-8 flex-1 w-full max-w-6xl mx-auto">
-        {children}
-      </main>
-    </div>
+          {/* Student & Public Routes (StudentLayout) */}
+          <Route element={<StudentLayout />}>
+            <Route path="/search" element={<SearchPage />} />
+            <Route path="/properties/:id" element={<PropertyDetailPage />} />
+            <Route path="/properties/compare" element={<ComparePage />} />
+            
+            {/* Student specific protected routes */}
+            <Route path="/wishlist" element={<ProtectedRoute role="student"><WishlistPage /></ProtectedRoute>} />
+            <Route path="/complaints" element={<ProtectedRoute role="student"><StudentComplaintsPage /></ProtectedRoute>} />
+            <Route path="/student/bookings" element={<ProtectedRoute role="student"><BookingsPage /></ProtectedRoute>} />
+            <Route path="/student/stay" element={<ProtectedRoute role="student"><StayPage /></ProtectedRoute>} />
+            <Route path="/student/rent" element={<ProtectedRoute role="student"><RentPage /></ProtectedRoute>} />
+            <Route path="/student/notices" element={<ProtectedRoute role="student"><NoticesPage /></ProtectedRoute>} />
+            <Route path="/student/notifications" element={<ProtectedRoute role="student"><NotificationsPage /></ProtectedRoute>} />
+            <Route path="/student/reviews" element={<ProtectedRoute role="student"><ReviewsPage /></ProtectedRoute>} />
+            <Route path="/student/profile" element={<ProtectedRoute role="student"><ProfilePage /></ProtectedRoute>} />
+          </Route>
+
+          {/* Owner Routes (DashboardLayout) */}
+          <Route path="/owner" element={<ProtectedRoute role="owner"><DashboardLayout /></ProtectedRoute>}>
+            <Route index element={<OwnerDashboard />} />
+            <Route path="kyc" element={<OwnerKYC />} />
+            <Route path="properties" element={<PropertiesList />} />
+            <Route path="properties/new" element={<PropertyForm />} />
+            <Route path="properties/:id/edit" element={<PropertyForm />} />
+            <Route path="properties/:propertyId/rooms" element={<RoomsPage />} />
+            <Route path="complaints" element={<OwnerComplaintsPage />} />
+            <Route path="bookings" element={<OwnerBookings />} />
+            <Route path="tenants" element={<OwnerTenants />} />
+            <Route path="rent" element={<OwnerRent />} />
+            <Route path="notices" element={<OwnerNotices />} />
+            <Route path="reviews" element={<OwnerReviews />} />
+            <Route path="reports" element={<OwnerReports />} />
+          </Route>
+
+          {/* Admin Routes (DashboardLayout) */}
+          <Route path="/admin" element={<ProtectedRoute role="admin"><DashboardLayout /></ProtectedRoute>}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="owners" element={<AdminOwners />} />
+            <Route path="escalated" element={<AdminEscalatedComplaints />} />
+            <Route path="users" element={<AdminUsers />} />
+            <Route path="properties" element={<AdminProperties />} />
+            <Route path="duplicates" element={<AdminDuplicates />} />
+            <Route path="colleges" element={<AdminColleges />} />
+            <Route path="reviews" element={<AdminReviews />} />
+            <Route path="reports" element={<AdminReports />} />
+            <Route path="audit" element={<AdminAuditLog />} />
+            <Route path="notifications" element={<AdminNotifications />} />
+            <Route path="data-access" element={<AdminDataAccess />} />
+          </Route>
+
+          <Route path="/unauthorized" element={
+            <div className="text-center mt-20 text-red-600 text-2xl font-bold">Unauthorized Access</div>
+          } />
+        </Routes>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
@@ -85,39 +138,7 @@ function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Navigate to="/search" replace />} />
-            <Route path="/search" element={<SearchPage />} />
-            <Route path="/properties/:id" element={<PropertyDetailPage />} />
-            <Route path="/properties/compare" element={<ComparePage />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-
-            {/* Student Protected Routes */}
-            <Route path="/wishlist" element={<ProtectedRoute role="student"><WishlistPage /></ProtectedRoute>} />
-            <Route path="/complaints" element={<ProtectedRoute role="student"><StudentComplaintsPage /></ProtectedRoute>} />
-            <Route path="/student" element={<ProtectedRoute role="student"><Navigate to="/search" /></ProtectedRoute>} />
-
-            {/* Owner Routes */}
-            <Route path="/owner" element={<ProtectedRoute role="owner"><Navigate to="/owner/properties" /></ProtectedRoute>} />
-            <Route path="/owner/kyc" element={<ProtectedRoute role="owner"><OwnerKYC /></ProtectedRoute>} />
-            <Route path="/owner/properties" element={<ProtectedRoute role="owner"><PropertiesList /></ProtectedRoute>} />
-            <Route path="/owner/properties/new" element={<ProtectedRoute role="owner"><PropertyForm /></ProtectedRoute>} />
-            <Route path="/owner/properties/:id/edit" element={<ProtectedRoute role="owner"><PropertyForm /></ProtectedRoute>} />
-            <Route path="/owner/properties/:propertyId/rooms" element={<ProtectedRoute role="owner"><RoomsPage /></ProtectedRoute>} />
-            <Route path="/owner/complaints" element={<ProtectedRoute role="owner"><OwnerComplaintsPage /></ProtectedRoute>} />
-
-            {/* Admin Routes */}
-            <Route path="/admin" element={<ProtectedRoute role="admin"><Navigate to="/admin/owners" /></ProtectedRoute>} />
-            <Route path="/admin/owners" element={<ProtectedRoute role="admin"><AdminOwners /></ProtectedRoute>} />
-            <Route path="/admin/escalated" element={<ProtectedRoute role="admin"><AdminEscalatedComplaints /></ProtectedRoute>} />
-
-            <Route path="/unauthorized" element={
-              <div className="text-center mt-20 text-red-600 text-2xl font-bold">Unauthorized Access</div>
-            } />
-          </Routes>
-        </Layout>
+        <MainContent />
       </BrowserRouter>
     </AuthProvider>
   );

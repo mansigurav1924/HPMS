@@ -194,3 +194,33 @@ def report_review(
         cur.execute("INSERT INTO review_reports (review_id, reported_by, reason) VALUES (%s, %s, %s)", (review_id, uid, data.reason))
         
         return {"status": "reported"}
+
+@router.get("/reviews/mine")
+def get_my_reviews(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    conn = Depends(get_db_connection)
+):
+    claims = require_role(request, "student")
+    uid = get_uid(claims)
+    
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT COUNT(*) FROM reviews WHERE student_id = %s", (uid,))
+        total = cur.fetchone()["count"]
+        
+        cur.execute("""
+            SELECT r.*, p.name as property_name
+            FROM reviews r
+            JOIN properties p ON r.property_id = p.property_id
+            WHERE r.student_id = %s
+            ORDER BY r.created_at DESC
+            LIMIT %s OFFSET %s
+        """, (uid, page_size, (page - 1) * page_size))
+        
+        return {
+            "reviews": cur.fetchall(),
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }

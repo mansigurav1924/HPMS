@@ -1,4 +1,7 @@
-import razorpay
+try:
+    import razorpay
+except ImportError:
+    razorpay = None
 import hmac
 import hashlib
 from app.config import settings
@@ -8,7 +11,7 @@ class RazorpayService:
         self.key_id = settings.RAZORPAY_KEY_ID
         self.key_secret = settings.RAZORPAY_KEY_SECRET
         self.webhook_secret = settings.RAZORPAY_WEBHOOK_SECRET
-        if self.key_id and self.key_secret:
+        if self.key_id and self.key_secret and razorpay:
             self.client = razorpay.Client(auth=(self.key_id, self.key_secret))
         else:
             self.client = None

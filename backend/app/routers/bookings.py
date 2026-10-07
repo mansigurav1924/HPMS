@@ -36,9 +36,9 @@ from ..core.rate_limit import limiter
 
 @router.post("/request")
 @limiter.limit("5/minute")
-def create_booking(req: Request, data: BookingRequest):
+def create_booking(request: Request, data: BookingRequest):
     conn = get_db_connection(request)
-    student_id = require_role(req, "student")
+    student_id = require_role(request, "student")
     
     try:
         with conn.cursor() as cur:
@@ -73,9 +73,9 @@ def create_booking(req: Request, data: BookingRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{booking_id}/respond")
-def respond_booking(req: Request, booking_id: str, data: BookingResponse):
+def respond_booking(request: Request, booking_id: str, data: BookingResponse):
     conn = get_db_connection(request)
-    owner_id = require_role(req, "owner")
+    owner_id = require_role(request, "owner")
     
     try:
         with conn.cursor() as cur:
@@ -111,9 +111,9 @@ def respond_booking(req: Request, booking_id: str, data: BookingResponse):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{booking_id}/cancel")
-def cancel_booking_endpoint(req: Request, booking_id: str, data: BookingCancel):
+def cancel_booking_endpoint(request: Request, booking_id: str, data: BookingCancel):
     conn = get_db_connection(request)
-    uid = get_uid(req) # Can be student or owner
+    uid = get_uid(request) # Can be student or owner
     
     try:
         with conn.cursor() as cur:
@@ -133,9 +133,9 @@ def cancel_booking_endpoint(req: Request, booking_id: str, data: BookingCancel):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{booking_id}/advance")
-def record_advance(req: Request, booking_id: str, data: AdvancePayment):
+def record_advance(request: Request, booking_id: str, data: AdvancePayment):
     conn = get_db_connection(request)
-    owner_id = require_role(req, "owner")
+    owner_id = require_role(request, "owner")
     
     try:
         with conn.cursor() as cur:
@@ -155,9 +155,9 @@ def record_advance(req: Request, booking_id: str, data: AdvancePayment):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/admin/expire-holds")
-def expire_holds(req: Request):
+def expire_holds(request: Request):
     conn = get_db_connection(request)
-    admin_id = require_role(req, "admin")
+    admin_id = require_role(request, "admin")
     
     try:
         with conn.cursor() as cur:
@@ -236,3 +236,63 @@ def expire_holds(req: Request):
 #         conn.rollback()
 #         raise HTTPException(status_code=500, detail=str(e))
 # ─────────────────────────────────────────────────────────────────────────────
+
+from fastapi import Query
+
+@router.get("")
+def list_bookings(
+    request: Request,
+    status: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100)
+):
+    conn = get_db_connection(request)
+    uid = get_uid(request)
+    
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT role FROM users WHERE user_id = %s", (uid,))
+        role_row = cur.fetchone()
+        if not role_row:
+            raise HTTPException(401, "User not found")
+        role = role_row['role']
+        
+        base_query = """
+            SELECT b.*, p.name as property_name, p.city, p.address,
+                   u.name as student_name, u.email as student_email, u.phone as student_phone
+            FROM bookings b
+            JOIN properties p ON b.property_id = p.property_id
+            JOIN users u ON b.student_id = u.user_id
+        """
+        conds = []
+        params = []
+        
+        if role == 'student':
+            conds.append("b.student_id = %s")
+            params.append(uid)
+        elif role == 'owner':
+            conds.append("p.owner_id = %s")
+            params.append(uid)
+        elif role == 'admin':
+            pass # can see all
+        else:
+            raise HTTPException(403, "Unauthorized")
+            
+        if status:
+            conds.append("b.status = %s")
+            params.append(status)
+            
+        where = "WHERE " + " AND ".join(conds) if conds else ""
+        
+        count_query = f"SELECT COUNT(*) FROM bookings b JOIN properties p ON b.property_id = p.property_id JOIN users u ON b.student_id = u.user_id {where}"
+        cur.execute(count_query, params)
+        total = cur.fetchone()['count']
+        
+        query = f"{base_query} {where} ORDER BY b.created_at DESC LIMIT %s OFFSET %s"
+        cur.execute(query, params + [page_size, (page - 1) * page_size])
+        
+        return {
+            "bookings": cur.fetchall(),
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }

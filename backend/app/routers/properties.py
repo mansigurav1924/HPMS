@@ -2,7 +2,7 @@
 Properties router — full CRUD for owners, public search & detailed discovery for students.
 """
 from fastapi import APIRouter, Request, HTTPException, Depends, UploadFile, File, Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, Field, model_validator
 from typing import Optional, List, Any
 import psycopg
 import json
@@ -26,8 +26,8 @@ class PropertyCreate(BaseModel):
     address: str
     city: str
     area: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
     description: Optional[str] = None
     house_rules: Optional[str] = None
     facilities: Optional[List[str]] = None
@@ -54,6 +54,13 @@ class PropertyCreate(BaseModel):
         if v not in ("instant", "approval"):
             raise ValueError("booking_mode must be instant or approval")
         return v
+
+    @model_validator(mode="after")
+    def check_coords(self):
+        if self.latitude is not None and self.longitude is not None:
+            if self.latitude == 0 and self.longitude == 0:
+                raise ValueError("Coordinates cannot be (0, 0)")
+        return self
 
 
 class PropertyUpdate(PropertyCreate):
@@ -176,12 +183,17 @@ def update_property(
 
     with conn.cursor() as cur:
         cur.execute(
-            f"UPDATE properties SET {set_clause} WHERE property_id = %s AND owner_id = %s RETURNING property_id",
+            f"UPDATE properties SET {set_clause} WHERE property_id = %s AND owner_id = %s RETURNING address, latitude, longitude",
             values
         )
-        if not cur.fetchone():
+        row = cur.fetchone()
+        if not row:
             raise HTTPException(404, "Property not found or not yours")
+        address, lat, lng = row
     conn.commit()
+
+    if "address" in updates or "latitude" in updates or "longitude" in updates:
+        _check_duplicate(conn, address, lat, lng, uid, property_id)
 
     log_action(conn, uid, "owner", "PROPERTY_UPDATED", "properties", property_id,
                None, {k: v for k, v in updates.items()})
@@ -304,6 +316,10 @@ def search_properties(
     food: Optional[bool] = Query(None),
     facilities: Optional[str] = Query(None, description="Comma separated facilities"),
     available_from: Optional[date] = Query(None),
+    north: Optional[float] = Query(None),
+    south: Optional[float] = Query(None),
+    east: Optional[float] = Query(None),
+    west: Optional[float] = Query(None),
     sort: Optional[str] = Query("price_asc", description="price_asc|price_desc|distance|rating|newest"),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=50),
@@ -323,6 +339,10 @@ def search_properties(
     food = food.default if hasattr(food, "default") else food
     facilities = facilities.default if hasattr(facilities, "default") else facilities
     available_from = available_from.default if hasattr(available_from, "default") else available_from
+    north = north.default if hasattr(north, "default") else north
+    south = south.default if hasattr(south, "default") else south
+    east = east.default if hasattr(east, "default") else east
+    west = west.default if hasattr(west, "default") else west
     sort = (sort.default if hasattr(sort, "default") else sort) or "price_asc"
     page = (page.default if hasattr(page, "default") else page) or 1
     page_size = (page_size.default if hasattr(page_size, "default") else page_size) or 10
@@ -392,6 +412,10 @@ def search_properties(
     if available_from:
         where_clauses.append("(b.available_from IS NULL OR b.available_from <= %s)")
         params.append(available_from)
+
+    if north is not None and south is not None and east is not None and west is not None:
+        where_clauses.append("p.latitude <= %s AND p.latitude >= %s AND p.longitude <= %s AND p.longitude >= %s")
+        params.extend([north, south, east, west])
 
     where_sql = " AND ".join(where_clauses)
 
@@ -486,6 +510,153 @@ def search_properties(
         "page_size": page_size
     }
 
+
+# ─────────────────────────────────────────────────────────────
+# Public Map Search Endpoint (Lightweight, max 200 markers)
+# ─────────────────────────────────────────────────────────────
+@router.get("/properties/map")
+@limiter.limit("60/minute")
+def map_properties(
+    request: Request,
+    q: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    area: Optional[str] = Query(None),
+    college_id: Optional[str] = Query(None),
+    radius_km: Optional[float] = Query(None, ge=0),
+    min_price: Optional[float] = Query(None, ge=0),
+    max_price: Optional[float] = Query(None, ge=0),
+    room_type: Optional[str] = Query(None),
+    sharing: Optional[int] = Query(None, ge=1),
+    gender_type: Optional[str] = Query(None),
+    is_ac: Optional[bool] = Query(None),
+    food: Optional[bool] = Query(None),
+    facilities: Optional[str] = Query(None),
+    available_from: Optional[date] = Query(None),
+    north: Optional[float] = Query(None),
+    south: Optional[float] = Query(None),
+    east: Optional[float] = Query(None),
+    west: Optional[float] = Query(None),
+    conn: psycopg.Connection = Depends(get_public_db_connection),
+):
+    q = q.default if hasattr(q, "default") else q
+    city = city.default if hasattr(city, "default") else city
+    area = area.default if hasattr(area, "default") else area
+    college_id = college_id.default if hasattr(college_id, "default") else college_id
+    radius_km = radius_km.default if hasattr(radius_km, "default") else radius_km
+    min_price = min_price.default if hasattr(min_price, "default") else min_price
+    max_price = max_price.default if hasattr(max_price, "default") else max_price
+    room_type = room_type.default if hasattr(room_type, "default") else room_type
+    sharing = sharing.default if hasattr(sharing, "default") else sharing
+    gender_type = gender_type.default if hasattr(gender_type, "default") else gender_type
+    is_ac = is_ac.default if hasattr(is_ac, "default") else is_ac
+    food = food.default if hasattr(food, "default") else food
+    facilities = facilities.default if hasattr(facilities, "default") else facilities
+    available_from = available_from.default if hasattr(available_from, "default") else available_from
+    north = north.default if hasattr(north, "default") else north
+    south = south.default if hasattr(south, "default") else south
+    east = east.default if hasattr(east, "default") else east
+    west = west.default if hasattr(west, "default") else west
+
+    college_lat, college_lon = None, None
+    if college_id:
+        with conn.cursor() as cur:
+            cur.execute("SELECT latitude, longitude FROM colleges WHERE college_id = %s", (college_id,))
+            crow = cur.fetchone()
+            if crow:
+                college_lat, college_lon = crow[0], crow[1]
+
+    where_clauses = ["p.status = 'Approved'", "op.verification_status = 'approved'", "r.status = 'Active'", "p.latitude IS NOT NULL", "p.longitude IS NOT NULL"]
+    params = []
+
+    if q and q.strip():
+        where_clauses.append("(p.tsv @@ websearch_to_tsquery('english', %s) OR p.name ILIKE %s OR p.area ILIKE %s OR p.address ILIKE %s OR p.description ILIKE %s)")
+        q_clean = q.strip()
+        params.extend([q_clean, f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%"])
+
+    if city:
+        where_clauses.append("LOWER(p.city) = LOWER(%s)")
+        params.append(city.strip())
+    if area:
+        where_clauses.append("LOWER(p.area) = LOWER(%s)")
+        params.append(area.strip())
+    if gender_type:
+        where_clauses.append("p.type = %s")
+        params.append(gender_type)
+    if room_type:
+        where_clauses.append("r.room_type = %s")
+        params.append(room_type)
+    if sharing:
+        where_clauses.append("r.capacity = %s")
+        params.append(sharing)
+    if is_ac is not None:
+        where_clauses.append("r.is_ac = %s")
+        params.append(is_ac)
+    if food:
+        where_clauses.append("(p.facilities::text ILIKE '%%food%%' OR p.facilities::text ILIKE '%%mess%%' OR p.facilities::text ILIKE '%%meals%%')")
+    if facilities:
+        for fac in [f.strip() for f in facilities.split(",") if f.strip()]:
+            where_clauses.append("p.facilities::text ILIKE %s")
+            params.append(f"%{fac}%")
+    if available_from:
+        where_clauses.append("(b.available_from IS NULL OR b.available_from <= %s)")
+        params.append(available_from)
+
+    if north is not None and south is not None and east is not None and west is not None:
+        where_clauses.append("p.latitude <= %s AND p.latitude >= %s AND p.longitude <= %s AND p.longitude >= %s")
+        params.extend([north, south, east, west])
+
+    where_sql = " AND ".join(where_clauses)
+    having_clauses = ["COUNT(b.bed_id) FILTER (WHERE b.status = 'available') > 0"]
+    having_params = []
+
+    if min_price is not None:
+        having_clauses.append("MIN(r.monthly_rent) >= %s")
+        having_params.append(min_price)
+    if max_price is not None:
+        having_clauses.append("MIN(r.monthly_rent) <= %s")
+        having_params.append(max_price)
+    if college_lat is not None and college_lon is not None and radius_km is not None:
+        having_clauses.append(f"distance_km(p.latitude, p.longitude, {college_lat}, {college_lon}) <= %s")
+        having_params.append(radius_km)
+
+    having_sql = " HAVING " + " AND ".join(having_clauses)
+
+    sql_query = f"""
+        SELECT p.property_id, p.name, p.latitude, p.longitude, p.type, p.avg_rating, p.photos,
+               COALESCE(MIN(r.monthly_rent), 0) AS min_rent,
+               COUNT(b.bed_id) FILTER (WHERE b.status = 'available') AS available_beds_count
+        FROM properties p
+        JOIN owner_profiles op ON op.owner_id = p.owner_id
+        JOIN rooms r ON r.property_id = p.property_id
+        JOIN beds b ON b.room_id = r.room_id
+        WHERE {where_sql}
+        GROUP BY p.property_id
+        {having_sql}
+        LIMIT 200
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(sql_query, params + having_params)
+        rows = cur.fetchall()
+        cols = [d.name for d in cur.description]
+
+    results = []
+    for r in rows:
+        item = dict(zip(cols, r))
+        item["property_id"] = str(item["property_id"])
+        photos = item.get("photos")
+        if isinstance(photos, str):
+            try: photos = json.loads(photos)
+            except Exception: photos = []
+        item["cover_photo"] = photos[0] if (photos and len(photos) > 0) else None
+        del item["photos"]
+        
+        item["min_rent"] = float(item["min_rent"])
+        if college_lat is not None:
+            item["distance_km"] = _haversine_distance(item["latitude"], item["longitude"], college_lat, college_lon)
+        results.append(item)
+
+    return results
 
 # ─────────────────────────────────────────────────────────────
 # Compare endpoint (must be BEFORE /{property_id} to avoid shadowing)

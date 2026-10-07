@@ -12,25 +12,243 @@ def get_owner_dashboard(
     property_id: Optional[str] = None,
     db: psycopg.Connection = Depends(get_db_connection)
 ):
-    claims = require_role(request, "owner")
+    import time
+    start_time = time.time()
+    claims = require_role(request, "owner", "warden")
     uid = get_uid(claims)
-    with db.cursor() as cur:
-        query = "SELECT * FROM owner_dashboard_stats WHERE owner_id = %s"
-        params = [uid]
-        if property_id:
-            query += " AND property_id = %s"
-            params.append(property_id)
-        
-        cur.execute(query, params)
-        rows = cur.fetchall()
-        
-        if not rows and property_id:
-            raise HTTPException(status_code=404, detail="Property not found or access denied")
-        
-        columns = [desc[0] for desc in cur.description]
-        stats = [dict(zip(columns, row)) for row in rows]
-        
-        return {"data": stats}
+    role = claims.get("role", "")
+    
+    try:
+        with db.cursor() as cur:
+            filter_str = ""
+            params = []
+            
+            if role == "warden":
+                filter_str = "property_id IN (SELECT property_id FROM property_staff WHERE user_id = %s)"
+                params.append(uid)
+            else:
+                filter_str = "owner_id = %s"
+                params.append(uid)
+                
+            if property_id:
+                filter_str += " AND property_id = %s"
+                params.append(property_id)
+            
+            # 1. SUMMARY STATS
+            cur.execute(f"""
+                SELECT 
+                    SUM(total_beds) as total_beds,
+                    SUM(vacant_beds) as vacant_beds,
+                    SUM(occupied_beds) as occupied_beds,
+                    SUM(reserved_beds) as reserved_beds,
+                    SUM(maintenance_beds) as maintenance_beds,
+                    SUM(open_complaints) as open_complaints,
+                    SUM(pending_booking_requests) as pending_booking_requests,
+                    SUM(upcoming_checkouts) as upcoming_checkouts,
+                    SUM(flagged_no_shows) as flagged_no_shows
+                FROM owner_dashboard_stats
+                WHERE {filter_str}
+            """, params)
+            stats = cur.fetchone()
+            
+            if not stats or stats[0] is None:
+                # No properties or data
+                return {"data": {}}
+                
+            total_beds = int(stats[0] or 0)
+            vacant_beds = int(stats[1] or 0)
+            occupied_beds = int(stats[2] or 0)
+            reserved_beds = int(stats[3] or 0)
+            maintenance_beds = int(stats[4] or 0)
+            open_complaints = int(stats[5] or 0)
+            pending_requests = int(stats[6] or 0)
+            upcoming_checkouts = int(stats[7] or 0)
+            
+            occupancy_rate = round((occupied_beds / total_beds * 100), 1) if total_beds > 0 else 0.0
+            
+            # For properties chart
+            cur.execute(f"""
+                SELECT property_id, property_name, total_beds, occupied_beds 
+                FROM owner_dashboard_stats 
+                WHERE {filter_str}
+                ORDER BY property_name
+            """, params)
+            property_occupancy = []
+            for row in cur.fetchall():
+                property_occupancy.append({
+                    "property_id": row[0],
+                    "name": row[1],
+                    "total": int(row[2] or 0),
+                    "occupied": int(row[3] or 0)
+                })
+
+            # a) Booking requests waiting approval
+            cur.execute(f"""
+                SELECT b.booking_id, b.property_id, p.name as property_name, b.status, b.requested_at, 
+                       (b.requested_at + interval '48 hours') as owner_response_due_at,
+                       u.name as student_name
+                FROM bookings b
+                JOIN users u ON b.student_id = u.user_id
+                JOIN properties p ON b.property_id = p.property_id
+                WHERE b.status = 'requested' AND b.property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
+                ORDER BY b.requested_at ASC
+                LIMIT 5
+            """, params)
+            booking_requests = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+            soonest_response_due_at = booking_requests[0]['owner_response_due_at'] if booking_requests else None
+
+            # b) Complaints attention
+            cur.execute(f"""
+                SELECT c.complaint_id, c.property_id, p.name as property_name, c.status, c.priority, c.created_at, c.title, c.escalation_level
+                FROM complaints c
+                JOIN properties p ON c.property_id = p.property_id
+                WHERE c.status IN ('open', 'in_progress', 'reopened', 'acknowledged')
+                AND c.property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
+                ORDER BY c.escalation_level DESC, c.created_at ASC
+                LIMIT 5
+            """, params)
+            complaints_attention = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+            breached_complaints = sum(1 for c in complaints_attention if c['escalation_level'] > 0)
+
+            # c) Ready for check-in
+            cur.execute(f"""
+                SELECT b.booking_id, b.property_id, p.name as property_name, b.move_in_date, u.name as student_name
+                FROM bookings b
+                JOIN users u ON b.student_id = u.user_id
+                JOIN properties p ON b.property_id = p.property_id
+                WHERE b.status = 'approved' AND b.move_in_date <= CURRENT_DATE + 7
+                AND b.property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
+                ORDER BY b.move_in_date ASC
+                LIMIT 5
+            """, params)
+            ready_for_checkin = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+
+            # d) No-shows
+            cur.execute(f"""
+                SELECT b.booking_id, b.property_id, p.name as property_name, b.move_in_date, u.name as student_name
+                FROM bookings b
+                JOIN users u ON b.student_id = u.user_id
+                JOIN properties p ON b.property_id = p.property_id
+                WHERE b.status = 'no_show'
+                AND b.property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
+                ORDER BY b.move_in_date ASC
+                LIMIT 5
+            """, params)
+            no_shows = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+
+            # e) Notice tenants
+            cur.execute(f"""
+                SELECT t.tenancy_id, t.property_id, p.name as property_name, t.expected_checkout_date as last_stay_date, u.name as student_name
+                FROM tenancies t
+                JOIN users u ON t.student_id = u.user_id
+                JOIN properties p ON t.property_id = p.property_id
+                WHERE t.status = 'notice'
+                AND t.property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
+                ORDER BY t.expected_checkout_date ASC
+                LIMIT 5
+            """, params)
+            notice_tenants = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+
+            # f) Pending verification
+            cur.execute(f"""
+                SELECT property_id, name as property_name, status 
+                FROM properties 
+                WHERE status = 'Pending' 
+                AND property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
+                LIMIT 5
+            """, params)
+            pending_verifications = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+
+            # Overview: Funnel
+            cur.execute(f"""
+                SELECT status, COUNT(*) as count
+                FROM bookings
+                WHERE requested_at >= CURRENT_DATE - interval '30 days'
+                AND property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
+                GROUP BY status
+            """, params)
+            funnel_rows = cur.fetchall()
+            booking_funnel = {"requested": 0, "approved": 0, "confirmed": 0, "rejected": 0, "expired": 0, "cancelled": 0}
+            for row in funnel_rows:
+                if row[0] in booking_funnel:
+                    booking_funnel[row[0]] = int(row[1])
+
+            # Overview: Reviews
+            cur.execute(f"""
+                SELECT r.review_id, r.rating, r.comment, r.created_at, u.name as student_name, r.owner_reply
+                FROM reviews r
+                JOIN users u ON r.student_id = u.user_id
+                WHERE r.property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
+                ORDER BY r.created_at DESC
+                LIMIT 5
+            """, params)
+            latest_reviews = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+
+            cur.execute(f"""
+                SELECT AVG(rating) as avg_rating, COUNT(*) FILTER (WHERE owner_reply IS NULL) as missing_replies
+                FROM reviews
+                WHERE property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
+            """, params)
+            review_stats = cur.fetchone()
+            avg_rating = round(float(review_stats[0] or 0), 1) if review_stats and review_stats[0] is not None else 0.0
+            missing_replies = int(review_stats[1] or 0) if review_stats else 0
+
+            # Recent activity
+            cur.execute(f"""
+                SELECT 'booking' as type, booking_id as id, requested_at as ts, 'New booking request' as description
+                FROM bookings
+                WHERE property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
+                UNION ALL
+                SELECT 'complaint' as type, complaint_id as id, created_at as ts, 'New complaint: ' || title as description
+                FROM complaints
+                WHERE property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
+                ORDER BY ts DESC
+                LIMIT 10
+            """, params * 2)
+            recent_activity = [dict(zip([desc[0] for desc in cur.description], row)) for row in cur.fetchall()]
+
+            response_data = {
+                "summary": {
+                    "total_beds": total_beds,
+                    "occupied_beds": occupied_beds,
+                    "vacant_beds": vacant_beds,
+                    "occupancy_rate": occupancy_rate,
+                    "pending_requests": pending_requests,
+                    "soonest_response_due_at": soonest_response_due_at,
+                    "open_complaints": open_complaints,
+                    "breached_complaints": breached_complaints,
+                    "upcoming_checkouts": upcoming_checkouts
+                },
+                "needs_attention": {
+                    "booking_requests": booking_requests,
+                    "complaints": complaints_attention,
+                    "ready_for_checkin": ready_for_checkin,
+                    "no_shows": no_shows,
+                    "notice_tenants": notice_tenants,
+                    "pending_verifications": pending_verifications
+                },
+                "overview": {
+                    "property_occupancy": property_occupancy,
+                    "bed_status": {
+                        "available": vacant_beds,
+                        "reserved": reserved_beds,
+                        "occupied": occupied_beds,
+                        "maintenance": maintenance_beds
+                    },
+                    "booking_funnel": booking_funnel,
+                    "latest_reviews": latest_reviews,
+                    "avg_rating": avg_rating,
+                    "missing_replies": missing_replies,
+                    "recent_activity": recent_activity
+                },
+                "timing_ms": round((time.time() - start_time) * 1000, 2)
+            }
+            print(f"Owner dashboard responded in {response_data['timing_ms']} ms")
+            return {"data": response_data}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"data": {}, "error": str(e)}
 
 @router.get("/admin")
 def get_admin_dashboard(
@@ -64,7 +282,7 @@ def get_student_dashboard(
         tenancies = cur.fetchall()
         
         # open complaints
-        cur.execute("SELECT COUNT(*) FROM complaints WHERE student_id = %s AND status NOT IN ('Resolved', 'Closed')", (uid,))
+        cur.execute("SELECT COUNT(*) FROM complaints WHERE student_id = %s AND status NOT IN ('resolved', 'closed')", (uid,))
         open_complaints = cur.fetchone()[0]
         
         # unread notifications

@@ -4,6 +4,30 @@
 
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-900;
+    @apply bg-brand-page text-gray-800 font-sans antialiased;
+  }
+}
+
+@layer components {
+  .btn-cta {
+    @apply inline-flex items-center justify-center px-6 py-3 bg-brand-orange text-white rounded-full font-semibold shadow-soft hover:bg-orange-500 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-dark-circle {
+    @apply inline-flex items-center justify-center w-10 h-10 bg-brand-navy text-white rounded-full hover:bg-gray-800 transition-all active:scale-95 disabled:opacity-50;
+  }
+  .btn-light-circle {
+    @apply inline-flex items-center justify-center w-10 h-10 bg-white text-gray-600 rounded-full shadow-soft hover:text-brand-navy transition-all active:scale-95 disabled:opacity-50 border border-gray-100;
+  }
+  .pill-select {
+    @apply appearance-none bg-white border border-gray-200 rounded-full px-4 py-2 pr-10 text-sm font-medium text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-sky focus:border-brand-sky hover:border-gray-300 transition-all;
+  }
+  .pill-input {
+    @apply bg-white border border-gray-200 rounded-full px-4 py-3 text-sm text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-sky focus:border-brand-sky transition-all w-full;
+  }
+  .card {
+    @apply bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden;
+  }
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-purple text-white;
   }
 }

@@ -333,3 +333,80 @@ def get_audit_logs(
         
         cur.execute(f"SELECT * FROM audit_logs {where} ORDER BY timestamp DESC LIMIT %s OFFSET %s", params + [page_size, (page - 1) * page_size])
         return {"logs": cur.fetchall(), "total": total, "page": page, "page_size": page_size}
+
+# ─────────────────────────────────────────────────────────────
+# Users Management
+# ─────────────────────────────────────────────────────────────
+@router.get("/users")
+def list_users(
+    request: Request,
+    search: Optional[str] = None,
+    role: Optional[str] = None,
+    status: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    conn = Depends(get_db_connection)
+):
+    require_role(request, "admin")
+    with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+        conds = []
+        params = []
+        
+        if search:
+            conds.append("(u.name ILIKE %s OR u.email ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
+        if role:
+            conds.append("u.role = %s")
+            params.append(role)
+        if status:
+            conds.append("u.status = %s")
+            params.append(status)
+            
+        where = "WHERE " + " AND ".join(conds) if conds else ""
+        
+        cur.execute(f"SELECT COUNT(*) FROM users u {where}", params)
+        total = cur.fetchone()["count"]
+        
+        cur.execute(f"SELECT user_id, name, email, phone, role, status, created_at FROM users u {where} ORDER BY created_at DESC LIMIT %s OFFSET %s", params + [page_size, (page - 1) * page_size])
+        
+        return {
+            "users": cur.fetchall(),
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }
+
+@router.post("/users/{user_id}/deactivate")
+def deactivate_user(
+    request: Request,
+    user_id: str,
+    conn = Depends(get_db_connection)
+):
+    admin_uid = get_uid(require_role(request, "admin"))
+    if str(admin_uid) == str(user_id):
+        raise HTTPException(400, "Cannot deactivate yourself")
+        
+    with conn.cursor() as cur:
+        cur.execute("UPDATE users SET status = 'inactive' WHERE user_id = %s RETURNING user_id", (user_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "User not found")
+            
+        log_action(conn, admin_uid, "admin", "DEACTIVATE_USER", "users", user_id, None, {"status": "inactive"})
+        conn.commit()
+        return {"status": "success"}
+
+@router.post("/users/{user_id}/activate")
+def activate_user(
+    request: Request,
+    user_id: str,
+    conn = Depends(get_db_connection)
+):
+    admin_uid = get_uid(require_role(request, "admin"))
+    with conn.cursor() as cur:
+        cur.execute("UPDATE users SET status = 'active' WHERE user_id = %s RETURNING user_id", (user_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "User not found")
+            
+        log_action(conn, admin_uid, "admin", "ACTIVATE_USER", "users", user_id, None, {"status": "active"})
+        conn.commit()
+        return {"status": "success"}

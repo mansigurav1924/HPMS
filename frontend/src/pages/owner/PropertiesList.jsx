@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../AuthContext';
 import { Link } from 'react-router-dom';
+import { Plus, Building2, MapPin, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
+import { Button, Card, Badge, PageTransition, StaggerList, Skeleton, EmptyState } from '../../components/ui';
 
 const API = import.meta.env.VITE_API_URL;
 
 const STATUS_BADGE = {
-  Draft:    'bg-gray-100 text-gray-700',
-  Pending:  'bg-yellow-100 text-yellow-800',
-  Approved: 'bg-green-100 text-green-800',
-  Rejected: 'bg-red-100 text-red-700',
-  Inactive: 'bg-gray-200 text-gray-500',
+  Draft:    { color: 'bg-gray-100 text-gray-700 border-gray-200', icon: null },
+  Pending:  { color: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: <AlertCircle size={12} className="mr-1 inline" /> },
+  Approved: { color: 'bg-green-100 text-green-800 border-green-200', icon: <CheckCircle2 size={12} className="mr-1 inline" /> },
+  Rejected: { color: 'bg-red-100 text-red-700 border-red-200', icon: <XCircle size={12} className="mr-1 inline" /> },
+  Inactive: { color: 'bg-gray-200 text-gray-500 border-gray-300', icon: null },
 };
 
 export default function PropertiesList() {
@@ -44,55 +46,71 @@ export default function PropertiesList() {
   };
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">My Properties</h1>
-        <Link to="/owner/properties/new"
-          className="bg-indigo-600 text-white px-4 py-2 rounded font-semibold hover:bg-indigo-700 transition">
-          + Add Property
-        </Link>
-      </div>
+    <PageTransition>
+      <div>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+          <div>
+            <h1 className="text-3xl font-extrabold text-brand-navy tracking-tight">My Properties</h1>
+            <p className="text-gray-500 font-medium mt-1">Manage your listings and track their status</p>
+          </div>
+          <Link to="/owner/properties/new">
+            <Button className="gap-2 shrink-0"><Plus size={18} /> Add Property</Button>
+          </Link>
+        </div>
 
-      {loading ? (
-        <p className="text-gray-500">Loading…</p>
-      ) : properties.length === 0 ? (
-        <div className="bg-white rounded-xl shadow p-10 text-center text-gray-400">
-          No properties yet. <Link to="/owner/properties/new" className="text-indigo-600 font-semibold">Add your first one →</Link>
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {properties.map(p => (
-            <div key={p.property_id} className="bg-white rounded-xl shadow p-5 flex justify-between items-start">
-              <div>
-                <h2 className="font-semibold text-lg text-gray-900">{p.name}</h2>
-                <p className="text-sm text-gray-500">{p.city} · {p.type?.replace('_', ' ')}</p>
-                <p className="text-xs text-gray-400 mt-1">{p.address}</p>
-              </div>
-              <div className="flex flex-col items-end gap-2">
-                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${STATUS_BADGE[p.status] || 'bg-gray-100'}`}>
-                  {p.status}
-                </span>
-                <div className="flex gap-2">
-                  <Link to={`/owner/properties/${p.property_id}/rooms`}
-                    className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition">
-                    Rooms
-                  </Link>
-                  {p.status === 'Draft' && (
-                    <button onClick={() => submitForReview(p.property_id)}
-                      className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-2 py-1 rounded transition">
-                      Submit for Review
-                    </button>
-                  )}
-                  <button onClick={() => deactivate(p.property_id)}
-                    className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded transition">
-                    Deactivate
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+        {loading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-32 w-full rounded-2xl" />
+            <Skeleton className="h-32 w-full rounded-2xl" />
+          </div>
+        ) : properties.length === 0 ? (
+          <EmptyState 
+            icon={<Building2 size={48} className="text-brand-sky opacity-50"/>} 
+            title="No properties yet" 
+            description="Start by adding your first hostel or PG listing." 
+            action={<Link to="/owner/properties/new"><Button>Add Property</Button></Link>} 
+          />
+        ) : (
+          <StaggerList className="space-y-4">
+            {properties.map(p => {
+              const statusConfig = STATUS_BADGE[p.status] || STATUS_BADGE['Draft'];
+              return (
+                <Card key={p.property_id} className="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 hover:-translate-y-1 hover:shadow-float transition-all duration-300">
+                  <div className="flex gap-4 items-center">
+                    <div className="w-16 h-16 rounded-2xl bg-gray-100 overflow-hidden border border-gray-200 shrink-0">
+                      <img src={p.cover_photo || 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=200'} alt={p.name} className="w-full h-full object-cover" />
+                    </div>
+                    <div>
+                      <h2 className="font-extrabold text-lg text-brand-navy mb-1">{p.name}</h2>
+                      <p className="text-xs font-semibold text-gray-500 mb-2 capitalize">{p.type?.replace('_', ' ')}</p>
+                      <p className="text-xs text-gray-400 flex items-center gap-1"><MapPin size={12} /> {p.city}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col items-start md:items-end gap-3 w-full md:w-auto">
+                    <Badge className={`border ${statusConfig.color} shadow-sm font-bold uppercase tracking-wider`}>
+                      {statusConfig.icon}{p.status}
+                    </Badge>
+                    <div className="flex flex-wrap gap-2 w-full justify-end">
+                      <Link to={`/owner/properties/${p.property_id}/rooms`}>
+                        <Button variant="light-circle" className="!px-4 !py-1.5 !rounded-lg !text-xs !h-auto border border-gray-200">Rooms</Button>
+                      </Link>
+                      {p.status === 'Draft' && (
+                        <Button className="!px-4 !py-1.5 !rounded-lg !text-xs !h-auto" onClick={() => submitForReview(p.property_id)}>
+                          Submit for Review
+                        </Button>
+                      )}
+                      <Button variant="light-circle" className="!px-4 !py-1.5 !rounded-lg !text-xs !h-auto bg-red-50 text-red-600 hover:bg-red-100 border-none" onClick={() => deactivate(p.property_id)}>
+                        Deactivate
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </StaggerList>
+        )}
+      </div>
+    </PageTransition>
   );
 }

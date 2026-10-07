@@ -41,9 +41,9 @@ class NoShowDecision(BaseModel):
     action: str # forfeit or refund
 
 @router.post("/tenancies/{booking_id}/check-in")
-def check_in(req: Request, booking_id: str, data: CheckInRequest):
-    conn = get_db_connection(req)
-    owner_id = require_role(req, "owner")
+def check_in(request: Request, booking_id: str, data: CheckInRequest):
+    conn = get_db_connection(request)
+    owner_id = require_role(request, "owner")
     try:
         with conn.cursor() as cur:
             cur.execute("""
@@ -67,9 +67,9 @@ def check_in(req: Request, booking_id: str, data: CheckInRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/tenancies")
-def get_tenancies(req: Request, status: Optional[str] = None, property_id: Optional[str] = None):
-    conn = get_db_connection(req)
-    uid = get_uid(req)
+def get_tenancies(request: Request, status: Optional[str] = None, property_id: Optional[str] = None):
+    conn = get_db_connection(request)
+    uid = get_uid(request)
     # determine role
     # assuming we can just query by student_id or owner_id based on policy, but doing it explicitly
     with conn.cursor() as cur:
@@ -99,9 +99,9 @@ def get_tenancies(req: Request, status: Optional[str] = None, property_id: Optio
         return {"tenancies": [{"id": r[0], "status": r[1], "rent": r[2], "property_id": r[3], "bed_id": r[4], "check_in_date": r[5]} for r in rows]}
 
 @router.get("/tenancies/{tenancy_id}")
-def get_tenancy_detail(req: Request, tenancy_id: str):
-    conn = get_db_connection(req)
-    uid = get_uid(req)
+def get_tenancy_detail(request: Request, tenancy_id: str):
+    conn = get_db_connection(request)
+    uid = get_uid(request)
     with conn.cursor() as cur:
         cur.execute("""
             SELECT t.tenancy_id, t.status, t.student_id, p.owner_id, sp.id_proof_url
@@ -132,9 +132,9 @@ def get_tenancy_detail(req: Request, tenancy_id: str):
         }
 
 @router.post("/tenancies/{tenancy_id}/notice")
-def give_notice(req: Request, tenancy_id: str, data: NoticeRequest):
-    conn = get_db_connection(req)
-    uid = get_uid(req)
+def give_notice(request: Request, tenancy_id: str, data: NoticeRequest):
+    conn = get_db_connection(request)
+    uid = get_uid(request)
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT give_notice(%s, %s, %s)", (tenancy_id, uid, data.notice_date))
@@ -149,9 +149,9 @@ def give_notice(req: Request, tenancy_id: str, data: NoticeRequest):
         raise HTTPException(500, detail=str(e))
 
 @router.post("/tenancies/{tenancy_id}/room-transfer")
-def room_transfer(req: Request, tenancy_id: str, data: RoomTransferRequest):
-    conn = get_db_connection(req)
-    owner_id = require_role(req, "owner")
+def room_transfer(request: Request, tenancy_id: str, data: RoomTransferRequest):
+    conn = get_db_connection(request)
+    owner_id = require_role(request, "owner")
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT room_transfer(%s, %s, %s, %s)", (tenancy_id, owner_id, data.new_bed_id, data.effective_date))
@@ -165,9 +165,9 @@ def room_transfer(req: Request, tenancy_id: str, data: RoomTransferRequest):
         raise HTTPException(500, detail=str(e))
 
 @router.post("/tenancies/{tenancy_id}/check-out")
-def check_out(req: Request, tenancy_id: str, data: CheckOutRequest):
-    conn = get_db_connection(req)
-    owner_id = require_role(req, "owner")
+def check_out(request: Request, tenancy_id: str, data: CheckOutRequest):
+    conn = get_db_connection(request)
+    owner_id = require_role(request, "owner")
     try:
         with conn.cursor() as cur:
             deductions_json = json.dumps([d.dict() for d in data.deductions])
@@ -185,9 +185,9 @@ def check_out(req: Request, tenancy_id: str, data: CheckOutRequest):
         raise HTTPException(500, detail=str(e))
 
 @router.post("/tenancies/{tenancy_id}/evict")
-def evict_tenant(req: Request, tenancy_id: str, data: EvictRequest):
-    conn = get_db_connection(req)
-    owner_id = require_role(req, "owner")
+def evict_tenant(request: Request, tenancy_id: str, data: EvictRequest):
+    conn = get_db_connection(request)
+    owner_id = require_role(request, "owner")
     try:
         with conn.cursor() as cur:
             deductions_json = json.dumps([d.dict() for d in data.deductions])
@@ -205,9 +205,9 @@ def evict_tenant(req: Request, tenancy_id: str, data: EvictRequest):
         raise HTTPException(500, detail=str(e))
 
 @router.get("/tenancies/{tenancy_id}/deposit-ledger")
-def get_ledger(req: Request, tenancy_id: str):
-    conn = get_db_connection(req)
-    uid = get_uid(req)
+def get_ledger(request: Request, tenancy_id: str):
+    conn = get_db_connection(request)
+    uid = get_uid(request)
     with conn.cursor() as cur:
         # Check permission
         cur.execute("""
@@ -227,9 +227,9 @@ class MarkProcessedRequest(BaseModel):
     reference_no: str
 
 @router.post("/refunds/{refund_id}/mark-processed")
-def mark_refund_processed(req: Request, refund_id: str, data: MarkProcessedRequest):
-    conn = get_db_connection(req)
-    owner_id = require_role(req, "owner")
+def mark_refund_processed(request: Request, refund_id: str, data: MarkProcessedRequest):
+    conn = get_db_connection(request)
+    owner_id = require_role(request, "owner")
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT mark_refund_processed(%s, %s, %s)", (refund_id, owner_id, data.reference_no))
@@ -240,9 +240,9 @@ def mark_refund_processed(req: Request, refund_id: str, data: MarkProcessedReque
         raise HTTPException(400, detail=str(e))
 
 @router.post("/bookings/{booking_id}/no-show-decision")
-def no_show_decision(req: Request, booking_id: str, data: NoShowDecision):
-    conn = get_db_connection(req)
-    owner_id = require_role(req, "owner")
+def no_show_decision(request: Request, booking_id: str, data: NoShowDecision):
+    conn = get_db_connection(request)
+    owner_id = require_role(request, "owner")
     try:
         with conn.cursor() as cur:
             # mock for now
@@ -254,9 +254,9 @@ def no_show_decision(req: Request, booking_id: str, data: NoShowDecision):
         raise HTTPException(400, detail=str(e))
 
 @router.get("/tenancies/{tenancy_id}/agreement")
-def get_agreement(req: Request, tenancy_id: str):
-    conn = get_db_connection(req)
-    uid = get_uid(req)
+def get_agreement(request: Request, tenancy_id: str):
+    conn = get_db_connection(request)
+    uid = get_uid(request)
     with conn.cursor() as cur:
         cur.execute("""
             SELECT t.agreement_url, t.student_id, p.owner_id

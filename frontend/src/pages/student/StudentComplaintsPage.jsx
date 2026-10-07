@@ -1,92 +1,42 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../AuthContext';
+import { motion, AnimatePresence } from 'framer-motion';
+import { AlertCircle, Plus, ChevronRight, X, Clock, MessageSquare, CheckCircle2, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Button, Card, Badge, PageTransition, StaggerList, Skeleton, EmptyState, Modal } from '../../components/ui';
 
-const API = 'http://127.0.0.1:8000';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-const CATEGORIES = [
-  'Electrical','Plumbing','Cleaning','WiFi',
-  'Furniture','Food','Security','Noise_Roommate','Other'
-];
+const CATEGORIES = ['Electrical','Plumbing','Cleaning','WiFi','Furniture','Food','Security','Noise_Roommate','Other'];
 const PRIORITIES = ['low','medium','high','urgent'];
 
 const STATUS_COLORS = {
   open:         'bg-blue-100 text-blue-800',
   acknowledged: 'bg-yellow-100 text-yellow-800',
-  in_progress:  'bg-orange-100 text-orange-800',
+  in_progress:  'bg-brand-orange/20 text-brand-orange',
   resolved:     'bg-green-100 text-green-800',
   closed:       'bg-gray-200 text-gray-700',
-  reopened:     'bg-purple-100 text-purple-800',
+  reopened:     'bg-brand-purple/20 text-brand-purple',
 };
 
 const PRIORITY_COLORS = {
   low:    'text-gray-500',
-  medium: 'text-blue-600',
-  high:   'text-orange-600',
-  urgent: 'text-red-700 font-bold',
+  medium: 'text-brand-sky',
+  high:   'text-brand-orange',
+  urgent: 'text-red-600 font-extrabold',
 };
-
-function StarRating({ onRate }) {
-  const [hovered, setHovered] = useState(0);
-  const [selected, setSelected] = useState(0);
-
-  const submit = (r) => {
-    setSelected(r);
-    onRate(r);
-  };
-
-  return (
-    <div className="flex gap-1 mt-2">
-      {[1,2,3,4,5].map(r => (
-        <button
-          key={r}
-          onClick={() => submit(r)}
-          onMouseEnter={() => setHovered(r)}
-          onMouseLeave={() => setHovered(0)}
-          className={`text-2xl transition ${
-            r <= (hovered || selected) ? 'text-yellow-400' : 'text-gray-300'
-          }`}
-        >★</button>
-      ))}
-    </div>
-  );
-}
 
 function StatusBadge({ status }) {
   return (
-    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[status] || 'bg-gray-100 text-gray-600'}`}>
-      {status?.replace('_', ' ').toUpperCase()}
-    </span>
+    <Badge className={STATUS_COLORS[status] || 'bg-gray-100 text-gray-600'}>
+      {status?.replace('_', ' ')}
+    </Badge>
   );
 }
 
-function Timeline({ updates }) {
-  return (
-    <ol className="relative border-l border-indigo-200 ml-3 mt-4">
-      {updates.map(u => (
-        <li key={u.update_id} className="mb-5 ml-5">
-          <span className="absolute -left-2 w-4 h-4 bg-indigo-500 rounded-full ring-4 ring-white" />
-          <p className="text-xs text-gray-400 mb-0.5">
-            {new Date(u.created_at).toLocaleString()} · {u.author_name}
-            {u.status_change && (
-              <span className="ml-2 text-indigo-500 font-medium">→ {u.status_change}</span>
-            )}
-          </p>
-          <p className="text-sm text-gray-700">{u.message}</p>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function RaiseForm({ onSuccess, onCancel }) {
-  const { token } = useAuth();
-  const [form, setForm]   = useState({ category: '', description: '', priority: 'medium' });
-  const [photos, setPhotos] = useState([]);
+function RaiseForm({ onSuccess, onCancel, token }) {
+  const [form, setForm] = useState({ category: '', description: '', priority: 'medium' });
   const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
-  const fileRef = useRef();
-
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+  const [error, setError] = useState('');
 
   const handleSubmit = async e => {
     e.preventDefault();
@@ -101,18 +51,6 @@ function RaiseForm({ onSuccess, onCancel }) {
         const d = await res.json();
         throw new Error(d.detail || 'Failed to raise complaint');
       }
-      const { complaint_id } = await res.json();
-
-      // Upload photos
-      for (const f of photos) {
-        const fd = new FormData();
-        fd.append('file', f);
-        await fetch(`${API}/complaints/${complaint_id}/upload-photo`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: fd,
-        });
-      }
       onSuccess();
     } catch (err) {
       setError(err.message);
@@ -121,89 +59,46 @@ function RaiseForm({ onSuccess, onCancel }) {
     }
   };
 
-  const previews = photos.map(f => URL.createObjectURL(f));
-
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 flex flex-col gap-4"
-      >
-        <h2 className="text-xl font-bold text-indigo-700">Raise a Complaint</h2>
-
-        {error && <div className="bg-red-50 text-red-700 text-sm rounded p-2">{error}</div>}
-
+    <Modal isOpen={true} onClose={onCancel} title="Raise a Complaint">
+      {error && <div className="bg-red-50 text-red-700 text-sm rounded-xl p-3 mb-4 font-semibold">{error}</div>}
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
-          <label className="text-sm font-medium text-gray-700">Category</label>
-          <select value={form.category} onChange={set('category')} required
-            className="mt-1 block w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 outline-none">
+          <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Category</label>
+          <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} required className="pill-select w-full">
             <option value="">Select category…</option>
             {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' / ')}</option>)}
           </select>
         </div>
-
         <div>
-          <label className="text-sm font-medium text-gray-700">Priority</label>
-          <select value={form.priority} onChange={set('priority')}
-            className="mt-1 block w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 outline-none">
+          <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Priority</label>
+          <select value={form.priority} onChange={e => setForm({...form, priority: e.target.value})} className="pill-select w-full">
             {PRIORITIES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
           </select>
         </div>
-
         <div>
-          <label className="text-sm font-medium text-gray-700">Description</label>
-          <textarea value={form.description} onChange={set('description')} required rows={4}
-            placeholder="Describe the issue in detail…"
-            className="mt-1 block w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 outline-none resize-none" />
+          <label className="block text-xs font-bold text-gray-400 uppercase mb-2">Description</label>
+          <textarea value={form.description} onChange={e => setForm({...form, description: e.target.value})} required rows={4}
+            placeholder="Describe the issue in detail…" className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-sky resize-none" />
         </div>
-
-        {/* Photo previews */}
-        <div>
-          <label className="text-sm font-medium text-gray-700">Photos (max 5, optional)</label>
-          <button type="button" onClick={() => fileRef.current.click()}
-            className="mt-1 block w-full border-2 border-dashed border-indigo-300 rounded-lg py-3 text-sm text-indigo-500 hover:bg-indigo-50 transition">
-            + Add Photos
-          </button>
-          <input ref={fileRef} type="file" multiple accept="image/*" className="hidden"
-            onChange={e => setPhotos(Array.from(e.target.files).slice(0, 5))} />
-          {previews.length > 0 && (
-            <div className="flex gap-2 mt-2 flex-wrap">
-              {previews.map((src, i) => (
-                <img key={i} src={src} alt="" className="w-16 h-16 object-cover rounded-lg border" />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="flex gap-3 justify-end">
-          <button type="button" onClick={onCancel} disabled={loading}
-            className="px-4 py-2 rounded-lg border text-sm text-gray-600 hover:bg-gray-50">
-            Cancel
-          </button>
-          <button type="submit" disabled={loading}
-            className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition">
-            {loading ? 'Submitting…' : 'Submit Complaint'}
-          </button>
+        <div className="flex gap-3 mt-4">
+          <Button type="button" variant="light-circle" className="w-full !rounded-full !h-12 border border-gray-200" onClick={onCancel}>Cancel</Button>
+          <Button type="submit" disabled={loading} className="w-full">{loading ? 'Submitting…' : 'Submit'}</Button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }
 
 function ComplaintDetail({ complaint, token, onClose, onRefresh }) {
-  const [detail, setDetail]   = useState(null);
+  const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [comment, setComment] = useState('');
   const [posting, setPosting] = useState(false);
-  const [rating, setRating]   = useState(null);
-  const [rateMsg, setRateMsg] = useState('');
 
   useEffect(() => {
-    fetch(`${API}/complaints/${complaint.complaint_id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.json())
-      .then(d => { setDetail(d); setLoading(false); });
+    fetch(`${API}/complaints/${complaint.complaint_id}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => { setDetail(d); setLoading(false); });
   }, [complaint.complaint_id, token]);
 
   const postComment = async () => {
@@ -216,252 +111,139 @@ function ComplaintDetail({ complaint, token, onClose, onRefresh }) {
     });
     setComment('');
     setPosting(false);
-    // Refresh detail
-    fetch(`${API}/complaints/${complaint.complaint_id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }).then(r => r.json()).then(setDetail);
+    fetch(`${API}/complaints/${complaint.complaint_id}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(setDetail);
   };
-
-  const reopen = async () => {
-    await fetch(`${API}/complaints/${complaint.complaint_id}/reopen`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ note: 'Issue not resolved' }),
-    });
-    onRefresh();
-    onClose();
-  };
-
-  const submitRating = async (r) => {
-    setRating(r);
-    const res = await fetch(`${API}/complaints/${complaint.complaint_id}/rate`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rating: r }),
-    });
-    setRateMsg(res.ok ? 'Thank you for your rating!' : 'Already rated or error.');
-  };
-
-  const sla = detail?.complaint_sla || {};
-  const reopenDays = sla?.reopen_window_days || 7;
-  const resolvedAt = detail?.resolved_at ? new Date(detail.resolved_at) : null;
-  const canReopen  = resolvedAt && (Date.now() - resolvedAt.getTime()) < reopenDays * 86400000
-                     && detail?.status === 'resolved';
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6">
-        {loading ? (
-          <div className="animate-pulse space-y-3">
-            <div className="h-6 bg-gray-200 rounded w-1/2" />
-            <div className="h-4 bg-gray-200 rounded w-3/4" />
-            <div className="h-32 bg-gray-200 rounded" />
+    <Modal isOpen={true} onClose={onClose}>
+      {loading ? (
+        <div className="animate-pulse space-y-4">
+          <Skeleton className="h-6 w-1/2" />
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      ) : (
+        <div className="flex flex-col h-full max-h-[70vh]">
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h2 className="text-2xl font-extrabold text-brand-navy">{detail.category?.replace('_', ' / ')}</h2>
+              <p className="text-xs font-semibold text-gray-400 mt-1">{detail.property_name} · {new Date(detail.created_at).toLocaleDateString()}</p>
+            </div>
+            <StatusBadge status={detail.status} />
           </div>
-        ) : (
-          <>
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h2 className="text-xl font-bold text-gray-800">
-                  {detail.category?.replace('_', ' / ')}
-                </h2>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {detail.property_name} · {new Date(detail.created_at).toLocaleDateString()}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <StatusBadge status={detail.status} />
-                <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
-              </div>
+
+          <div className="overflow-y-auto no-scrollbar flex-1 pr-2">
+            <div className="bg-gray-50 rounded-2xl p-4 mb-6 border border-gray-100 text-sm text-gray-700 leading-relaxed">
+              {detail.description}
             </div>
 
-            <p className="text-gray-700 text-sm mb-4">{detail.description}</p>
-
-            {/* Photos */}
-            {detail.photos?.length > 0 && (
-              <div className="flex gap-2 mb-4 flex-wrap">
-                {detail.photos.map((src, i) => (
-                  <a key={i} href={src} target="_blank" rel="noreferrer">
-                    <img src={src} alt="" className="w-20 h-20 object-cover rounded-lg border hover:opacity-80" />
-                  </a>
-                ))}
-              </div>
-            )}
-
-            {/* Resolution notes */}
-            {detail.resolution_notes && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-                <p className="text-xs font-semibold text-green-700 mb-1">Resolution</p>
-                <p className="text-sm text-gray-700">{detail.resolution_notes}</p>
-              </div>
-            )}
-
-            {/* Timeline */}
-            <h3 className="text-sm font-semibold text-gray-600 mb-1">Activity Timeline</h3>
-            {detail.updates?.length > 0
-              ? <Timeline updates={detail.updates} />
-              : <p className="text-xs text-gray-400 italic ml-3">No updates yet.</p>
-            }
-
-            {/* Comment box */}
-            <div className="mt-4 flex gap-2">
-              <input
-                value={comment} onChange={e => setComment(e.target.value)}
-                placeholder="Add a comment…"
-                className="flex-1 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 outline-none"
-              />
-              <button onClick={postComment} disabled={posting}
-                className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                {posting ? '…' : 'Send'}
-              </button>
+            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Activity Timeline</h3>
+            <div className="space-y-4 mb-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
+              {detail.updates?.length > 0 ? detail.updates.map(u => (
+                <div key={u.update_id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-brand-sky text-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm z-10">
+                    {u.status_change ? <ShieldAlert size={14}/> : <MessageSquare size={14}/>}
+                  </div>
+                  <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl bg-white shadow-soft border border-gray-100">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-brand-navy text-xs">{u.author_name}</span>
+                      <time className="text-[10px] text-gray-400 font-medium">{new Date(u.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</time>
+                    </div>
+                    {u.status_change && <div className="text-[10px] font-bold text-brand-orange uppercase mb-1">Status → {u.status_change}</div>}
+                    <p className="text-sm text-gray-600">{u.message}</p>
+                  </div>
+                </div>
+              )) : <p className="text-sm text-gray-400 italic">No updates yet.</p>}
             </div>
+          </div>
 
-            {/* Reopen button */}
-            {canReopen && (
-              <button onClick={reopen}
-                className="mt-3 w-full py-2 border-2 border-orange-400 text-orange-600 text-sm font-semibold rounded-lg hover:bg-orange-50 transition">
-                Reopen Complaint ({reopenDays}d window)
-              </button>
-            )}
-
-            {/* Rating */}
-            {['resolved','closed'].includes(detail.status) && !detail.student_rating && (
-              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm font-semibold text-yellow-800">Rate your experience</p>
-                <StarRating onRate={submitRating} />
-                {rateMsg && <p className="text-xs text-gray-500 mt-1">{rateMsg}</p>}
-              </div>
-            )}
-            {detail.student_rating && (
-              <p className="mt-2 text-xs text-gray-500">
-                You rated this complaint: {'★'.repeat(detail.student_rating)}{'☆'.repeat(5 - detail.student_rating)}
-              </p>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+          <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2 shrink-0">
+            <input value={comment} onChange={e => setComment(e.target.value)} placeholder="Type a message…" className="flex-1 pill-input !py-2" />
+            <Button onClick={postComment} disabled={posting} className="!px-6 !py-2">Send</Button>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 
 export default function StudentComplaintsPage() {
   const { token } = useAuth();
   const [complaints, setComplaints] = useState([]);
-  const [total,      setTotal]      = useState(0);
-  const [page,       setPage]       = useState(1);
-  const [loading,    setLoading]    = useState(false);
-  const [error,      setError]      = useState('');
-  const [showForm,   setShowForm]   = useState(false);
-  const [selected,   setSelected]   = useState(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [selected, setSelected] = useState(null);
 
   const load = async (p = 1) => {
-    setLoading(true); setError('');
+    setLoading(true);
     try {
-      const res = await fetch(`${API}/complaints?page=${p}&page_size=10`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to load complaints');
+      const res = await fetch(`${API}/complaints?page=${p}&page_size=10`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       setComplaints(data.complaints || []);
       setTotal(data.total || 0);
       setPage(p);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) {} 
+    finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
 
   return (
-    <div className="max-w-3xl mx-auto py-6 px-4">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-extrabold text-gray-900">My Complaints</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{total} total</p>
+    <PageTransition>
+      <div className="max-w-4xl mx-auto py-8 px-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+          <div>
+            <h1 className="text-3xl font-extrabold text-brand-navy tracking-tight">My Complaints</h1>
+            <p className="text-gray-500 font-medium mt-1">Track and manage your service requests</p>
+          </div>
+          <Button onClick={() => setShowForm(true)} className="gap-2 shrink-0">
+            <Plus size={18} /> Raise Complaint
+          </Button>
         </div>
-        <button onClick={() => setShowForm(true)}
-          className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 shadow transition">
-          + Raise Complaint
-        </button>
+
+        {loading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-24 w-full rounded-2xl" />
+            <Skeleton className="h-24 w-full rounded-2xl" />
+          </div>
+        ) : complaints.length === 0 ? (
+          <EmptyState icon={<AlertCircle size={48} className="text-brand-sky opacity-50"/>} title="No complaints yet" description="Everything looks good! If you face any issues, you can raise a complaint here." />
+        ) : (
+          <StaggerList className="space-y-4">
+            {complaints.map(c => (
+              <Card key={c.complaint_id} className="p-0 group cursor-pointer hover:-translate-y-1 hover:shadow-float transition-all duration-300 border-l-4 border-l-brand-orange" onClick={() => setSelected(c)}>
+                <div className="p-5 flex items-center justify-between">
+                  <div className="flex gap-5 items-center">
+                    <div className="hidden sm:flex w-12 h-12 rounded-full bg-brand-page items-center justify-center text-brand-navy border border-gray-100">
+                      <MessageSquare size={18} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-3 mb-1">
+                        <h3 className="font-extrabold text-brand-navy text-lg">{c.category?.replace('_', ' / ')}</h3>
+                        {c.escalated && <Badge className="bg-red-100 text-red-600 border border-red-200 shadow-sm"><AlertTriangle size={10} className="mr-1 inline"/> Escalated</Badge>}
+                      </div>
+                      <p className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                        <Clock size={12} /> {new Date(c.created_at).toLocaleDateString()} <span className="mx-1">•</span> 
+                        <span className={`uppercase font-bold tracking-wider ${PRIORITY_COLORS[c.priority]}`}>{c.priority} priority</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <StatusBadge status={c.status} />
+                    <ChevronRight size={20} className="text-gray-300 group-hover:text-brand-orange transition-colors" />
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </StaggerList>
+        )}
+
+        {showForm && <RaiseForm token={token} onSuccess={() => { setShowForm(false); load(); }} onCancel={() => setShowForm(false)} />}
+        {selected && <ComplaintDetail complaint={selected} token={token} onClose={() => setSelected(null)} onRefresh={() => load(page)} />}
       </div>
-
-      {error && (
-        <div className="bg-red-50 text-red-700 text-sm rounded-xl p-3 mb-4">
-          {error} <button onClick={() => load()} className="underline ml-2">Retry</button>
-        </div>
-      )}
-
-      {/* Skeleton loader */}
-      {loading && (
-        <div className="space-y-3">
-          {[1,2,3].map(i => (
-            <div key={i} className="animate-pulse bg-gray-100 rounded-xl h-20" />
-          ))}
-        </div>
-      )}
-
-      {!loading && complaints.length === 0 && !error && (
-        <div className="text-center py-20 text-gray-400">
-          <p className="text-4xl mb-3">🎉</p>
-          <p className="font-medium">No complaints yet. Hope everything is great!</p>
-        </div>
-      )}
-
-      {!loading && (
-        <div className="space-y-3">
-          {complaints.map(c => (
-            <button
-              key={c.complaint_id}
-              onClick={() => setSelected(c)}
-              className="w-full text-left bg-white rounded-xl shadow-sm border hover:border-indigo-300 hover:shadow-md transition p-4 flex justify-between items-start"
-            >
-              <div>
-                <p className="font-semibold text-gray-800">{c.category?.replace('_', ' / ')}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{c.property_name} · {new Date(c.created_at).toLocaleDateString()}</p>
-                <p className={`text-xs mt-1 ${PRIORITY_COLORS[c.priority]}`}>
-                  {c.priority?.toUpperCase()} priority
-                </p>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <StatusBadge status={c.status} />
-                {c.escalated && (
-                  <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">
-                    ⚠ Escalated
-                  </span>
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {total > 10 && (
-        <div className="flex justify-center gap-3 mt-6">
-          <button onClick={() => load(page - 1)} disabled={page === 1}
-            className="px-4 py-1.5 border rounded-lg text-sm disabled:opacity-40 hover:bg-gray-50">
-            ← Prev
-          </button>
-          <span className="text-sm text-gray-500 self-center">Page {page}</span>
-          <button onClick={() => load(page + 1)} disabled={page * 10 >= total}
-            className="px-4 py-1.5 border rounded-lg text-sm disabled:opacity-40 hover:bg-gray-50">
-            Next →
-          </button>
-        </div>
-      )}
-
-      {showForm && (
-        <RaiseForm onSuccess={() => { setShowForm(false); load(); }} onCancel={() => setShowForm(false)} />
-      )}
-      {selected && (
-        <ComplaintDetail
-          complaint={selected}
-          token={token}
-          onClose={() => setSelected(null)}
-          onRefresh={() => load(page)}
-        />
-      )}
-    </div>
+    </PageTransition>
   );
 }
