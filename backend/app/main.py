@@ -38,10 +38,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+_dev_origins = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"]
+_extra_origins = [o.strip().rstrip("/") for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+is_production = settings.ENV.lower() == "production"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
-    allow_origin_regex=r"http://localhost:\d+",
+    allow_origins=_extra_origins if is_production else _dev_origins + _extra_origins,
+    allow_origin_regex=None if is_production else r"http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,7 +66,7 @@ app.include_router(wishlist.router)
 app.include_router(bookings.router)
 app.include_router(tenancies.router)
 app.include_router(complaints.router)
-from app.routers import dashboards, search, exports, data_access, seed
+from app.routers import dashboards, search, exports, data_access
 
 app.include_router(notices.router)
 app.include_router(reviews.router)
@@ -71,7 +75,10 @@ app.include_router(dashboards.router)
 app.include_router(search.router)
 app.include_router(exports.router)
 app.include_router(data_access.router)
-app.include_router(seed.router)
+if not is_production:
+    # Dev-only data seeding helpers; never exposed in production.
+    from app.routers import seed
+    app.include_router(seed.router)
 app.include_router(maps.router)
 
 @app.get("/health")
@@ -86,21 +93,3 @@ def health_check():
         db_status = "error"
         db_error = str(e)
     return {"status": "ok", "env": settings.ENV, "phase": "12", "db_status": db_status, "db_error": db_error}
-
-@app.get("/test-db")
-def test_db():
-    import psycopg
-    results = {}
-    url = "postgresql://postgres.oppfiozbafwxepryueht:N8%25v%40%26UDvK232gb@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres?sslmode=require"
-    try:
-        c = psycopg.connect(url, connect_timeout=3)
-        with c.cursor() as cur:
-            cur.execute("SELECT owner_id FROM owner_profiles;")
-            results["owner_profiles"] = [r[0] for r in cur.fetchall()]
-            
-            cur.execute("SELECT DISTINCT owner_id FROM properties;")
-            results["properties"] = [r[0] for r in cur.fetchall()]
-        c.close()
-    except Exception as e:
-        results["error"] = str(e)
-    return results

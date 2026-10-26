@@ -1,25 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="hpms-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#B0B91A" />
-      <stop offset="100%" stop-color="#83C512" />
-    </linearGradient>
-    <linearGradient id="hpms-accent" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#9C990E" />
-      <stop offset="100%" stop-color="#57AA08" />
+    <linearGradient id="hpms-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5" />
+      <stop offset="100%" stop-color="#7C3AED" />
     </linearGradient>
   </defs>
 
-  <rect width="512" height="512" rx="128" fill="#1A1F36" />
+  <!-- Brand tile: same indigo → violet gradient used in the app UI -->
+  <rect width="512" height="512" rx="128" fill="url(#hpms-bg)" />
 
-  <g transform="translate(102.4, 102.4) scale(0.6)">
-    <rect width="512" height="512" rx="128" fill="url(#hpms-grad)" />
-    <path d="M256 96 L416 224 V400 C416 408.8 408.8 416 400 416 H112 C103.2 416 96 408.8 96 400 V224 L256 96 Z" fill="#1A1F36" fill-opacity="0.15" />
-    <path d="M256 128 L384 230 V384 H128 V230 L256 128 Z" fill="#1A1F36" />
-    <path d="M256 100 L410 220 C416 225 412 234 404 234 H380 L256 135 L132 234 H108 C100 234 96 225 102 220 L256 100 Z" fill="url(#hpms-accent)" />
-    <rect x="180" y="240" width="36" height="116" rx="10" fill="url(#hpms-grad)" />
-    <rect x="296" y="240" width="36" height="116" rx="10" fill="url(#hpms-grad)" />
-    <rect x="180" y="284" width="152" height="28" rx="6" fill="url(#hpms-grad)" />
-    <path d="M236 384 V330 C236 319 245 310 256 310 C267 310 276 319 276 330 V384 H236 Z" fill="url(#hpms-accent)" />
-  </g>
+  <!-- House glyph -->
+  <path d="M256 118 L428 252 C436 258 432 272 422 272 H400 V384 C400 397 389 408 376 408 H136 C123 408 112 397 112 384 V272 H90 C80 272 76 258 84 252 L256 118 Z" fill="#FFFFFF" />
+
+  <!-- Door -->
+  <path d="M218 408 V328 C218 306 235 290 256 290 C277 290 294 306 294 328 V408 Z" fill="#5B4BE6" />
 </svg>

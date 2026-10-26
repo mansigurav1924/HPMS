@@ -7,27 +7,37 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"Open Sans"', 'sans-serif'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
       },
       colors: {
+        primary: {
+          50: '#EEF0FF', 100: '#E0E4FF', 200: '#C7CDFE', 300: '#A5ADFC',
+          400: '#818CF8', 500: '#6366F1', 600: '#4F46E5', 700: '#4338CA', 800: '#3730A3', 900: '#312E81',
+        },
         brand: {
-          navy: '#1A1F36',
-          orange: '#F28C0F',
-          sky: '#3ABEF0',
-          yellow: '#FED215',
-          purple: '#3A2D78',
-          page: '#F9FAFB',
+          navy: '#0F1535',
+          // NOTE: legacy token name kept for compatibility; value is now the primary indigo.
+          orange: '#6366F1',
+          sky: '#38BDF8',
+          yellow: '#FBBF24',
+          purple: '#4F46E5',
+          page: '#F5F6FF',
         },
         dash: {
-          purple: '#3A2D78',
-          sky: '#3ABEF0',
-          yellow: '#FED215',
-          bg: '#F4F6FA',
+          // Sidebar background (deep navy)
+          purple: '#0B1230',
+          sky: '#818CF8',
+          yellow: '#FBBF24',
+          bg: '#F3F4FF',
         }
       },
       boxShadow: {
-        soft: '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
-        float: '0 10px 30px -5px rgba(0, 0, 0, 0.1)',
+        soft: '0 4px 20px -2px rgba(15, 21, 53, 0.06)',
+        float: '0 14px 36px -8px rgba(15, 21, 53, 0.18)',
+        glow: '0 10px 28px -6px rgba(99, 102, 241, 0.45)',
+      },
+      backgroundImage: {
+        'brand-gradient': 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
       },
       animation: {
         'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',

@@ -71,5 +71,7 @@ def require_role(request: Request, *roles: str) -> dict:
     return claims
 
 
-def get_uid(claims: dict) -> str:
-    return claims.get("sub", "")
+def get_uid(claims) -> str:
+    if isinstance(claims, Request):
+        claims = _decode_token(claims)
+    return claims.get("sub", "") if isinstance(claims, dict) else ""

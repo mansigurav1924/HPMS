@@ -99,19 +99,45 @@ def seed_demo_data():
     if existing.data and len(existing.data) > 0:
         owner_id = existing.data[0]["user_id"]
     else:
-        owner_id = str(uuid.uuid4())
-        # Create auth user or DB row
-        sb.table("users").insert({
-            "user_id": owner_id,
-            "role": "owner",
-            "name": "Demo Approved Owner",
-            "email": owner_email
-        }).execute()
-        sb.table("owner_profiles").insert({
-            "owner_id": owner_id,
-            "business_name": "HPMS Premium Stays Ltd",
-            "verification_status": "approved"
-        }).execute()
+        # First check if there's any owner we can just reuse
+        any_owner = sb.table("users").select("user_id").eq("role", "owner").limit(1).execute()
+        if any_owner.data and len(any_owner.data) > 0:
+            owner_id = any_owner.data[0]["user_id"]
+            # Ensure they have an approved profile
+            profile_check = sb.table("owner_profiles").select("owner_id").eq("owner_id", owner_id).execute()
+            if not profile_check.data:
+                sb.table("owner_profiles").insert({
+                    "owner_id": owner_id,
+                    "business_name": "HPMS Premium Stays Ltd",
+                    "verification_status": "approved"
+                }).execute()
+            else:
+                sb.table("owner_profiles").update({"verification_status": "approved"}).eq("owner_id", owner_id).execute()
+        else:
+            # Need to create auth user first to satisfy users_auth_fk
+            auth_res = sb.auth.admin.create_user({
+                "email": owner_email,
+                "password": "Password123!",
+                "email_confirm": True
+            })
+            owner_id = auth_res.user.id
+            
+            # Note: Many Supabase setups have a trigger that auto-inserts into public.users.
+            # We will try to update first, if no rows updated, we insert.
+            update_res = sb.table("users").update({"role": "owner", "name": "Demo Approved Owner"}).eq("user_id", owner_id).execute()
+            if not update_res.data:
+                sb.table("users").insert({
+                    "user_id": owner_id,
+                    "role": "owner",
+                    "name": "Demo Approved Owner",
+                    "email": owner_email
+                }).execute()
+                
+            sb.table("owner_profiles").insert({
+                "owner_id": owner_id,
+                "business_name": "HPMS Premium Stays Ltd",
+                "verification_status": "approved"
+            }).execute()
     
     # Insert properties
     for prop in DEMO_PROPERTIES:

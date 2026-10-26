@@ -7,10 +7,10 @@ import PropertyMarker from '../../components/maps/PropertyMarker';
 import CollegeMarker from '../../components/maps/CollegeMarker';
 import { Heart, Share2, MapPin, ChevronLeft, ChevronRight, Check, CheckCircle2, ShieldCheck, Map as MapIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button, Card, Skeleton, PageTransition, Reveal } from '../../components/ui';
+import { Button, Card, Skeleton, PageTransition, Reveal, Badge } from '../../components/ui';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
+import Swal from '../../lib/swal';
 
 
 export default function PropertyDetailPage() {
@@ -42,8 +42,13 @@ export default function PropertyDetailPage() {
       });
 
     fetch(`${API}/colleges`)
-      .then(r => r.json())
-      .then(data => setColleges(data))
+      .then(r => {
+        if (!r.ok) throw new Error('Colleges fetch failed');
+        return r.json();
+      })
+      .then(data => {
+        if (Array.isArray(data)) setColleges(data);
+      })
       .catch(() => {});
   }, [id]);
 
@@ -58,6 +63,10 @@ export default function PropertyDetailPage() {
 
   const toggleWishlist = async () => {
     if (!token) return navigate('/login');
+    if (user?.role !== 'student') {
+      Swal.fire({ title: 'Oops...', text: 'Only students can add properties to their wishlist.', icon: 'warning', confirmButtonColor: '#ff6b35' });
+      return;
+    }
     const method = isWishlisted ? 'DELETE' : 'POST';
     try {
       const res = await fetch(`${API}/wishlist${isWishlisted ? `/${id}` : ''}`, {
@@ -65,8 +74,31 @@ export default function PropertyDetailPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: !isWishlisted ? JSON.stringify({ property_id: id }) : undefined,
       });
-      if (res.ok) setIsWishlisted(!isWishlisted);
-    } catch (e) {}
+      if (res.ok) {
+        setIsWishlisted(!isWishlisted);
+      } else {
+        const data = await res.json();
+        Swal.fire({ title: 'Error', text: data.detail || 'Failed to update wishlist', icon: 'error', confirmButtonColor: '#ff6b35' });
+      }
+    } catch (e) {
+      Swal.fire({ title: 'Error', text: 'Error updating wishlist: ' + e.message, icon: 'error', confirmButtonColor: '#ff6b35' });
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: property.name || 'Property',
+          url: window.location.href,
+        });
+      } else {
+        await navigator.clipboard.writeText(window.location.href);
+        Swal.fire({ title: 'Copied!', text: 'Link copied to clipboard!', icon: 'success', confirmButtonColor: '#ff6b35', timer: 1500 });
+      }
+    } catch (err) {
+      console.error('Error sharing:', err);
+    }
   };
 
   if (loading) {
@@ -90,7 +122,8 @@ export default function PropertyDetailPage() {
     );
   }
 
-  const photos = property.photos && property.photos.length > 0 ? property.photos : ['https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=1000'];
+  const photos = Array.isArray(property.photos) && property.photos.length > 0 ? property.photos : ['https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=1000'];
+  const facilities = Array.isArray(property.facilities) && property.facilities.length > 0 ? property.facilities : ['WiFi', 'Meals', 'Laundry', 'Security'];
   const lat = property.latitude || 28.6139;
   const lng = property.longitude || 77.2090;
 
@@ -104,8 +137,10 @@ export default function PropertyDetailPage() {
             <ChevronLeft size={16} /> Back to Search
           </Link>
           <div className="flex gap-3">
-            <button className="btn-light-circle"><Share2 size={16} /></button>
-            <button className="btn-light-circle" onClick={toggleWishlist}>
+            <button className="btn-light-circle" onClick={handleShare} title="Share Property">
+              <Share2 size={16} />
+            </button>
+            <button className="btn-light-circle" onClick={toggleWishlist} title="Add to Wishlist">
               <Heart size={16} className={isWishlisted ? "fill-brand-orange text-brand-orange" : ""} />
             </button>
           </div>
@@ -125,7 +160,7 @@ export default function PropertyDetailPage() {
           
           <div className="absolute bottom-6 left-6 md:bottom-10 md:left-10 text-white z-10">
             <span className="bg-brand-orange text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-3 inline-block">
-              {property.type.replace('_', ' ')}
+              {property.type?.replace('_', ' ') || 'Hostel'}
             </span>
             <h1 className="text-3xl md:text-5xl font-extrabold leading-tight mb-2 drop-shadow-md">{property.name}</h1>
             <p className="flex items-center gap-2 font-medium text-white/90 drop-shadow-md">
@@ -157,7 +192,7 @@ export default function PropertyDetailPage() {
             <Reveal delay={0.1}>
               <h2 className="text-2xl font-extrabold text-brand-navy mb-6">What this place offers</h2>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                {(property.facilities && property.facilities.length > 0 ? property.facilities : ['WiFi', 'Meals', 'Laundry', 'Security']).map(fac => (
+                {facilities.map(fac => (
                   <div key={fac} className="flex items-center gap-3 text-gray-700 font-medium">
                     <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-brand-orange border border-gray-100">
                       <CheckCircle2 size={18} />
@@ -183,7 +218,7 @@ export default function PropertyDetailPage() {
                 <GoogleMapsProvider lat={lat} lng={lng}>
                   <MapView center={{ lat, lng }} zoom={14}>
                     <PropertyMarker property={{ lat, lng, min_rent: property.min_rent || 0 }} />
-                    {colleges.map(c => (
+                    {Array.isArray(colleges) && colleges.map(c => (
                       <CollegeMarker key={c.college_id} college={c} />
                     ))}
                   </MapView>
@@ -243,11 +278,45 @@ export default function PropertyDetailPage() {
                   </div>
                 </div>
 
-                <Button className="w-full mb-4 opacity-50 cursor-not-allowed">
-                  Request to Book
+                <Button 
+                  className="w-full mb-4 bg-brand-orange hover:bg-orange-600 text-white font-bold"
+                  onClick={async () => {
+                    if (!token) return navigate('/login');
+                    try {
+                      const res = await fetch(`${API}/bookings/auto-book-and-checkin`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ property_id: id })
+                      });
+                      if (!res.ok) {
+                        const data = await res.json();
+                        throw new Error(data.detail || 'Booking failed');
+                      }
+                      Swal.fire({
+                        title: 'Success!',
+                        text: 'Booking and Check-in successful! Redirecting to My Stay.',
+                        icon: 'success',
+                        confirmButtonColor: '#ff6b35'
+                      }).then(() => {
+                        navigate('/student/stay');
+                      });
+                    } catch (e) {
+                      Swal.fire({
+                        title: 'Oops...',
+                        text: e.message,
+                        icon: 'error',
+                        confirmButtonColor: '#ff6b35'
+                      });
+                    }
+                  }}
+                >
+                  Instant Book (Bypass)
                 </Button>
                 <p className="text-[11px] font-bold text-center text-gray-400 uppercase tracking-wider">
-                  Booking available in Phase 4
+                  Payment bypassed for testing
                 </p>
               </Card>
             </div>

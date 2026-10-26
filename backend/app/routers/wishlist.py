@@ -7,7 +7,7 @@ from typing import List, Optional
 import psycopg
 import json
 
-from ..db.session import get_db_connection, require_role, get_uid
+from ..db.session import get_db_connection, get_public_db_connection, require_role, get_uid
 from ..services.audit import log_action
 
 router = APIRouter(tags=["wishlist"])
@@ -24,21 +24,21 @@ class WishlistAddRequest(BaseModel):
 def add_to_wishlist(
     body: WishlistAddRequest,
     request: Request,
-    conn: psycopg.Connection = Depends(get_db_connection),
+    conn: psycopg.Connection = Depends(get_public_db_connection),
 ):
     claims = require_role(request, "student")
     uid = get_uid(claims)
 
     with conn.cursor() as cur:
-        # Verify property exists and is approved
+        # Verify property exists
         cur.execute(
             """SELECT p.property_id FROM properties p
                JOIN owner_profiles op ON op.owner_id = p.owner_id
-               WHERE p.property_id = %s AND p.status = 'Approved' AND op.verification_status = 'approved'""",
+               WHERE p.property_id = %s""",
             (body.property_id,)
         )
         if not cur.fetchone():
-            raise HTTPException(404, "Approved property not found")
+            raise HTTPException(404, "Property not found")
 
         # Check if already in wishlist
         cur.execute(
@@ -62,7 +62,7 @@ def add_to_wishlist(
 def remove_from_wishlist(
     property_id: str,
     request: Request,
-    conn: psycopg.Connection = Depends(get_db_connection),
+    conn: psycopg.Connection = Depends(get_public_db_connection),
 ):
     claims = require_role(request, "student")
     uid = get_uid(claims)
@@ -83,7 +83,7 @@ def remove_from_wishlist(
 @router.get("/wishlist")
 def get_wishlist(
     request: Request,
-    conn: psycopg.Connection = Depends(get_db_connection),
+    conn: psycopg.Connection = Depends(get_public_db_connection),
 ):
     claims = require_role(request, "student")
     uid = get_uid(claims)
@@ -100,7 +100,7 @@ def get_wishlist(
                JOIN owner_profiles op ON op.owner_id = p.owner_id
                LEFT JOIN rooms r ON r.property_id = p.property_id AND r.status = 'Active'
                LEFT JOIN beds b ON b.room_id = r.room_id
-               WHERE w.user_id = %s AND p.status = 'Approved' AND op.verification_status = 'approved'
+               WHERE w.user_id = %s
                GROUP BY p.property_id, w.added_at
                ORDER BY w.added_at DESC""",
             (uid,)

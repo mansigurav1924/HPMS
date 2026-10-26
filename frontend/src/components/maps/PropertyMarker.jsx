@@ -11,13 +11,16 @@ export default function PropertyMarker({ property, isHovered, isSelected, onClic
       zIndex={isHovered || isSelected ? 100 : 1}
     >
       <div 
-        className={`px-3 py-1.5 rounded-full font-bold text-sm shadow-float transition-all ${
+        className={`flex items-center justify-center w-10 h-10 rounded-full shadow-float transition-all ${
           isHovered || isSelected 
             ? 'bg-brand-navy text-white scale-110' 
-            : 'bg-white text-brand-navy border border-gray-200 hover:border-brand-navy'
+            : 'bg-brand-orange text-white border-2 border-white hover:scale-110'
         }`}
       >
-        ${property.min_rent || property.rent || 0} USD
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
       </div>
     </AdvancedMarker>
   );

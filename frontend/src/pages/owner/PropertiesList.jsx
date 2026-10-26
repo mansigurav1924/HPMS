@@ -1,116 +1,147 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../AuthContext';
 import { Link } from 'react-router-dom';
-import { Plus, Building2, MapPin, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
-import { Button, Card, Badge, PageTransition, StaggerList, Skeleton, EmptyState } from '../../components/ui';
+import { motion } from 'framer-motion';
+import { Plus, Building2, MapPin, Pencil, BedDouble, Send, Power } from 'lucide-react';
+import {
+  Button, Card, PageTransition, PageHeader, Skeleton, EmptyState, StatusBadge, ConfirmDialog, toast,
+} from '../../components/ui';
+import { apiFetch } from '../../lib/api';
 
-const API = import.meta.env.VITE_API_URL;
-
-const STATUS_BADGE = {
-  Draft:    { color: 'bg-gray-100 text-gray-700 border-gray-200', icon: null },
-  Pending:  { color: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: <AlertCircle size={12} className="mr-1 inline" /> },
-  Approved: { color: 'bg-green-100 text-green-800 border-green-200', icon: <CheckCircle2 size={12} className="mr-1 inline" /> },
-  Rejected: { color: 'bg-red-100 text-red-700 border-red-200', icon: <XCircle size={12} className="mr-1 inline" /> },
-  Inactive: { color: 'bg-gray-200 text-gray-500 border-gray-300', icon: null },
-};
+const FALLBACK_IMG = 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=600';
 
 export default function PropertiesList() {
   const { token } = useAuth();
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [toDeactivate, setToDeactivate] = useState(null);
+  const [busy, setBusy] = useState(false);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
-    fetch(`${API}/properties/mine`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(d => { setProperties(Array.isArray(d) ? d : []); setLoading(false); })
-      .catch(() => setLoading(false));
+    apiFetch('/properties/mine', token)
+      .then((d) => setProperties(Array.isArray(d) ? d : []))
+      .catch((e) => toast.error(e.message))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  useEffect(load, [load]);
+
+  const submitForReview = async (p) => {
+    try {
+      await apiFetch(`/properties/${p.property_id}/submit`, token, { method: 'POST' });
+      toast.success(`${p.name} submitted for review`);
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    }
   };
 
-  useEffect(() => { load(); }, [token]);
-
-  const submitForReview = async (id) => {
-    await fetch(`${API}/properties/${id}/submit`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}` }
-    });
-    load();
-  };
-
-  const deactivate = async (id) => {
-    if (!confirm('Deactivate this property?')) return;
-    const r = await fetch(`${API}/properties/${id}`, {
-      method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
-    });
-    if (r.ok || r.status === 204) load();
-    else { const d = await r.json(); alert(d.detail); }
+  const deactivate = async () => {
+    setBusy(true);
+    try {
+      await apiFetch(`/properties/${toDeactivate.property_id}`, token, { method: 'DELETE' });
+      toast.success('Property deactivated');
+      setToDeactivate(null);
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <PageTransition>
-      <div>
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
-          <div>
-            <h1 className="text-3xl font-extrabold text-brand-navy tracking-tight">My Properties</h1>
-            <p className="text-gray-500 font-medium mt-1">Manage your listings and track their status</p>
-          </div>
-          <Link to="/owner/properties/new">
-            <Button className="gap-2 shrink-0"><Plus size={18} /> Add Property</Button>
-          </Link>
-        </div>
+      <div className="max-w-7xl mx-auto">
+        <PageHeader
+          title="My Properties"
+          subtitle="Manage your listings and track their verification status."
+          actions={
+            <Link to="/owner/properties/new" className="btn-cta">
+              <Plus size={18} /> Add Property
+            </Link>
+          }
+        />
 
         {loading ? (
-          <div className="space-y-4">
-            <Skeleton className="h-32 w-full rounded-2xl" />
-            <Skeleton className="h-32 w-full rounded-2xl" />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {[0, 1, 2].map((i) => <Skeleton key={i} className="h-72" />)}
           </div>
         ) : properties.length === 0 ? (
-          <EmptyState 
-            icon={<Building2 size={48} className="text-brand-sky opacity-50"/>} 
-            title="No properties yet" 
-            description="Start by adding your first hostel or PG listing." 
-            action={<Link to="/owner/properties/new"><Button>Add Property</Button></Link>} 
-          />
+          <Card>
+            <EmptyState
+              icon={<Building2 size={44} className="text-primary-300" />}
+              title="No properties yet"
+              description="Start by adding your first hostel or PG listing."
+              action={<Link to="/owner/properties/new" className="btn-cta">Add Property</Link>}
+            />
+          </Card>
         ) : (
-          <StaggerList className="space-y-4">
-            {properties.map(p => {
-              const statusConfig = STATUS_BADGE[p.status] || STATUS_BADGE['Draft'];
-              return (
-                <Card key={p.property_id} className="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 hover:-translate-y-1 hover:shadow-float transition-all duration-300">
-                  <div className="flex gap-4 items-center">
-                    <div className="w-16 h-16 rounded-2xl bg-gray-100 overflow-hidden border border-gray-200 shrink-0">
-                      <img src={p.cover_photo || 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=200'} alt={p.name} className="w-full h-full object-cover" />
-                    </div>
-                    <div>
-                      <h2 className="font-extrabold text-lg text-brand-navy mb-1">{p.name}</h2>
-                      <p className="text-xs font-semibold text-gray-500 mb-2 capitalize">{p.type?.replace('_', ' ')}</p>
-                      <p className="text-xs text-gray-400 flex items-center gap-1"><MapPin size={12} /> {p.city}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {properties.map((p, i) => (
+              <motion.div
+                key={p.property_id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i * 0.06, 0.4), duration: 0.3 }}
+              >
+                <Card className="card-hover group h-full flex flex-col">
+                  <div className="relative h-44 overflow-hidden bg-gray-100">
+                    <img
+                      src={p.cover_photo || FALLBACK_IMG}
+                      alt={p.name}
+                      loading="lazy"
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                    <div className="absolute top-3 left-3">
+                      <StatusBadge status={p.status} className="bg-white/95 backdrop-blur" />
                     </div>
                   </div>
-                  
-                  <div className="flex flex-col items-start md:items-end gap-3 w-full md:w-auto">
-                    <Badge className={`border ${statusConfig.color} shadow-sm font-bold uppercase tracking-wider`}>
-                      {statusConfig.icon}{p.status}
-                    </Badge>
-                    <div className="flex flex-wrap gap-2 w-full justify-end">
-                      <Link to={`/owner/properties/${p.property_id}/rooms`}>
-                        <Button variant="light-circle" className="!px-4 !py-1.5 !rounded-lg !text-xs !h-auto border border-gray-200">Rooms</Button>
+                  <div className="p-5 flex-1 flex flex-col">
+                    <h2 className="font-extrabold text-lg text-brand-navy truncate">{p.name}</h2>
+                    <p className="text-xs font-semibold text-primary-600 capitalize mt-0.5">{p.type?.replace(/_/g, ' ')}</p>
+                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-2">
+                      <MapPin size={14} /> {p.city}
+                    </p>
+
+                    <div className="flex flex-wrap gap-2 mt-5 pt-4 border-t border-gray-100">
+                      <Link to={`/owner/properties/${p.property_id}/edit`} className="btn-secondary !py-1.5 !px-3 text-xs">
+                        <Pencil size={13} /> Edit
+                      </Link>
+                      <Link to={`/owner/properties/${p.property_id}/rooms`} className="btn-secondary !py-1.5 !px-3 text-xs">
+                        <BedDouble size={13} /> Rooms
                       </Link>
                       {p.status === 'Draft' && (
-                        <Button className="!px-4 !py-1.5 !rounded-lg !text-xs !h-auto" onClick={() => submitForReview(p.property_id)}>
-                          Submit for Review
+                        <Button className="!py-1.5 !px-3 text-xs" onClick={() => submitForReview(p)}>
+                          <Send size={13} /> Submit
                         </Button>
                       )}
-                      <Button variant="light-circle" className="!px-4 !py-1.5 !rounded-lg !text-xs !h-auto bg-red-50 text-red-600 hover:bg-red-100 border-none" onClick={() => deactivate(p.property_id)}>
-                        Deactivate
-                      </Button>
+                      <button
+                        onClick={() => setToDeactivate(p)}
+                        className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors"
+                      >
+                        <Power size={13} /> Deactivate
+                      </button>
                     </div>
                   </div>
                 </Card>
-              );
-            })}
-          </StaggerList>
+              </motion.div>
+            ))}
+          </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={Boolean(toDeactivate)}
+        onClose={() => setToDeactivate(null)}
+        onConfirm={deactivate}
+        loading={busy}
+        tone="danger"
+        title="Deactivate property?"
+        description={toDeactivate ? `${toDeactivate.name} will no longer be visible to students.` : ''}
+        confirmLabel="Deactivate"
+      />
     </PageTransition>
   );
 }

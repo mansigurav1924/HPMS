@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     
     GOOGLE_MAPS_SERVER_KEY: str = ""
 
+    # Comma-separated frontend origins allowed by CORS, e.g. https://hpms.vercel.app
+    CORS_ORIGINS: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 settings = Settings()

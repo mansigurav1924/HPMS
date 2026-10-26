@@ -86,9 +86,9 @@ def get_owner_dashboard(
             cur.execute(f"""
                 SELECT b.booking_id, b.property_id, p.name as property_name, b.status, b.requested_at, 
                        (b.requested_at + interval '48 hours') as owner_response_due_at,
-                       u.name as student_name
+                       COALESCE(u.name, 'Student Resident') as student_name
                 FROM bookings b
-                JOIN users u ON b.student_id = u.user_id
+                LEFT JOIN users u ON b.student_id = u.user_id
                 JOIN properties p ON b.property_id = p.property_id
                 WHERE b.status = 'requested' AND b.property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
                 ORDER BY b.requested_at ASC
@@ -112,9 +112,9 @@ def get_owner_dashboard(
 
             # c) Ready for check-in
             cur.execute(f"""
-                SELECT b.booking_id, b.property_id, p.name as property_name, b.move_in_date, u.name as student_name
+                SELECT b.booking_id, b.property_id, p.name as property_name, b.move_in_date, COALESCE(u.name, 'Student Resident') as student_name
                 FROM bookings b
-                JOIN users u ON b.student_id = u.user_id
+                LEFT JOIN users u ON b.student_id = u.user_id
                 JOIN properties p ON b.property_id = p.property_id
                 WHERE b.status = 'approved' AND b.move_in_date <= CURRENT_DATE + 7
                 AND b.property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
@@ -125,9 +125,9 @@ def get_owner_dashboard(
 
             # d) No-shows
             cur.execute(f"""
-                SELECT b.booking_id, b.property_id, p.name as property_name, b.move_in_date, u.name as student_name
+                SELECT b.booking_id, b.property_id, p.name as property_name, b.move_in_date, COALESCE(u.name, 'Student Resident') as student_name
                 FROM bookings b
-                JOIN users u ON b.student_id = u.user_id
+                LEFT JOIN users u ON b.student_id = u.user_id
                 JOIN properties p ON b.property_id = p.property_id
                 WHERE b.status = 'no_show'
                 AND b.property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
@@ -138,9 +138,9 @@ def get_owner_dashboard(
 
             # e) Notice tenants
             cur.execute(f"""
-                SELECT t.tenancy_id, t.property_id, p.name as property_name, t.expected_checkout_date as last_stay_date, u.name as student_name
+                SELECT t.tenancy_id, t.property_id, p.name as property_name, t.expected_checkout_date as last_stay_date, COALESCE(u.name, 'Student Resident') as student_name
                 FROM tenancies t
-                JOIN users u ON t.student_id = u.user_id
+                LEFT JOIN users u ON t.student_id = u.user_id
                 JOIN properties p ON t.property_id = p.property_id
                 WHERE t.status = 'notice'
                 AND t.property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
@@ -175,9 +175,9 @@ def get_owner_dashboard(
 
             # Overview: Reviews
             cur.execute(f"""
-                SELECT r.review_id, r.rating, r.comment, r.created_at, u.name as student_name, r.owner_reply
+                SELECT r.review_id, r.rating, r.comment, r.created_at, COALESCE(u.name, 'Student Reviewer') as student_name, r.owner_reply
                 FROM reviews r
-                JOIN users u ON r.student_id = u.user_id
+                LEFT JOIN users u ON r.student_id = u.user_id
                 WHERE r.property_id IN (SELECT property_id FROM owner_dashboard_stats WHERE {filter_str})
                 ORDER BY r.created_at DESC
                 LIMIT 5
@@ -272,17 +272,18 @@ def get_student_dashboard(
     # Student dashboard stats (active tenancies, open complaints, notices, unread notifications)
     claims = require_role(request, "student")
     uid = get_uid(claims)
+    with db.cursor() as cur:
         # 1. Tenancy state
         cur.execute("""
             SELECT t.tenancy_id, t.property_id, p.name as property_name, t.status, 
-                   t.check_in_date, t.expected_checkout_date, t.agreement_url, t.deposit_status,
-                   r.room_number, b.bed_number
+                   t.check_in_date, t.expected_checkout_date, t.agreement_url,
+                   r.room_number, b.bed_label
             FROM tenancies t 
             JOIN properties p ON t.property_id = p.property_id
-            LEFT JOIN rooms r ON t.room_id = r.room_id
             LEFT JOIN beds b ON t.bed_id = b.bed_id
+            LEFT JOIN rooms r ON b.room_id = r.room_id
             WHERE t.student_id = %s AND t.status IN ('active', 'notice')
-            ORDER BY t.created_at DESC LIMIT 1
+            ORDER BY t.check_in_date DESC NULLS LAST LIMIT 1
         """, (uid,))
         tenancy_row = cur.fetchone()
         tenancy = dict(zip([d[0] for d in cur.description], tenancy_row)) if tenancy_row else None
@@ -294,14 +295,14 @@ def get_student_dashboard(
                 SELECT b.booking_id, b.property_id, p.name as property_name, b.status,
                        b.requested_at, (b.requested_at + interval '48 hours') as owner_response_due_at,
                        b.move_in_date, p.latitude, p.longitude, u.name as owner_name, u.phone as owner_phone,
-                       r.room_number, bd.bed_number
+                       r.room_number, bd.bed_label
                 FROM bookings b
                 JOIN properties p ON b.property_id = p.property_id
                 JOIN users u ON p.owner_id = u.user_id
                 LEFT JOIN rooms r ON b.room_id = r.room_id
                 LEFT JOIN beds bd ON b.bed_id = bd.bed_id
                 WHERE b.student_id = %s
-                ORDER BY b.created_at DESC LIMIT 1
+                ORDER BY b.requested_at DESC LIMIT 1
             """, (uid,))
             booking_row = cur.fetchone()
             booking = dict(zip([d[0] for d in cur.description], booking_row)) if booking_row else None
@@ -313,30 +314,20 @@ def get_student_dashboard(
         email_ver = user_row[0] if user_row else False
         phone_ver = user_row[1] if user_row else False
         
-        # - profile complete & minor consent
+        # - profile complete
         cur.execute("""
-            SELECT id_proof_url, college_id_url, guardian_name, guardian_phone, guardian_email, date_of_birth, guardian_consent_verified
+            SELECT id_proof_url, college, guardian_name, guardian_phone
             FROM student_profiles WHERE student_id = %s
         """, (uid,))
         prof_row = cur.fetchone()
-        profile_incomplete = not prof_row or not all(prof_row[:5])
+        profile_incomplete = not prof_row or not all(prof_row[:4])
         
-        is_minor = False
-        minor_missing_consent = False
-        if prof_row and prof_row[5]:
-            from datetime import date
-            today = date.today()
-            dob = prof_row[5]
-            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-            if age < 18:
-                is_minor = True
-                if not prof_row[6]:
-                    minor_missing_consent = True
+        minor_missing_consent = False # Fields don't exist in DB
 
         # - resolved complaints waiting for rating
         cur.execute("""
             SELECT complaint_id, resolved_at FROM complaints 
-            WHERE student_id = %s AND status = 'resolved' AND rating IS NULL
+            WHERE student_id = %s AND status = 'resolved' AND student_rating IS NULL
             ORDER BY resolved_at DESC LIMIT 1
         """, (uid,))
         complaint_to_rate_row = cur.fetchone()
@@ -359,16 +350,16 @@ def get_student_dashboard(
         cur.execute("SELECT COUNT(*) FROM complaints WHERE student_id = %s AND status NOT IN ('resolved', 'closed')", (uid,))
         open_complaints = cur.fetchone()[0]
         cur.execute("""
-            SELECT complaint_id, title, status, created_at FROM complaints 
+            SELECT complaint_id, category as title, status, created_at FROM complaints 
             WHERE student_id = %s ORDER BY created_at DESC LIMIT 3
         """, (uid,))
         complaints = [dict(zip([d[0] for d in cur.description], row)) for row in cur.fetchall()]
 
         # Notifications
-        cur.execute("SELECT COUNT(*) FROM notifications WHERE user_id = %s AND read_at IS NULL", (uid,))
+        cur.execute("SELECT COUNT(*) FROM in_app_notifications WHERE user_id = %s AND read_at IS NULL", (uid,))
         unread_notifications = cur.fetchone()[0]
         cur.execute("""
-            SELECT notification_id, title, message, created_at, read_at FROM notifications 
+            SELECT id as notification_id, title, body as message, created_at, read_at FROM in_app_notifications 
             WHERE user_id = %s ORDER BY created_at DESC LIMIT 5
         """, (uid,))
         notifications = [dict(zip([d[0] for d in cur.description], row)) for row in cur.fetchall()]
@@ -386,8 +377,8 @@ def get_student_dashboard(
         # Wishlist
         cur.execute("""
             SELECT w.property_id, p.name, p.city, p.status
-            FROM wishlist w JOIN properties p ON w.property_id = p.property_id
-            WHERE w.student_id = %s ORDER BY w.created_at DESC LIMIT 3
+            FROM wishlists w JOIN properties p ON w.property_id = p.property_id
+            WHERE w.user_id = %s ORDER BY w.added_at DESC LIMIT 3
         """, (uid,))
         wishlist = [dict(zip([d[0] for d in cur.description], row)) for row in cur.fetchall()]
 

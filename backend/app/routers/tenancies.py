@@ -5,7 +5,7 @@ from datetime import date
 import psycopg
 import json
 
-from ..db.session import get_db_connection, require_role, get_uid
+from ..db.session import get_db_connection, require_role, get_uid, _decode_token
 from ..services.audit import log_action
 from ..services.storage import get_signed_url
 from ..services.pdf import generate_and_upload_agreement
@@ -41,9 +41,9 @@ class NoShowDecision(BaseModel):
     action: str # forfeit or refund
 
 @router.post("/tenancies/{booking_id}/check-in")
-def check_in(request: Request, booking_id: str, data: CheckInRequest):
-    conn = get_db_connection(request)
-    owner_id = require_role(request, "owner")
+def check_in(request: Request, booking_id: str, data: CheckInRequest, conn: psycopg.Connection = Depends(get_db_connection)):
+    claims = require_role(request, "owner")
+    owner_id = claims.get("sub", "")
     try:
         with conn.cursor() as cur:
             cur.execute("""
@@ -67,23 +67,28 @@ def check_in(request: Request, booking_id: str, data: CheckInRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/tenancies")
-def get_tenancies(request: Request, status: Optional[str] = None, property_id: Optional[str] = None):
-    conn = get_db_connection(request)
-    uid = get_uid(request)
+def get_tenancies(request: Request, status: Optional[str] = None, property_id: Optional[str] = None, conn: psycopg.Connection = Depends(get_db_connection)):
+    claims = _decode_token(request)
+    uid = get_uid(claims)
     # determine role
     # assuming we can just query by student_id or owner_id based on policy, but doing it explicitly
     with conn.cursor() as cur:
         cur.execute("SELECT role FROM users WHERE user_id = %s", (uid,))
-        role = cur.fetchone()[0]
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(401, "User not found")
+        role = row[0]
         
-        query = "SELECT tenancy_id, status, rent_amount, property_id, bed_id, check_in_date FROM tenancies t"
+        query = "SELECT t.tenancy_id, t.status, t.rent_amount, t.property_id, t.bed_id, t.check_in_date FROM tenancies t"
         params = []
         if role == 'student':
-            query += " WHERE student_id = %s"
+            query += " WHERE t.student_id = %s"
             params.append(uid)
         elif role == 'owner':
             query += " JOIN properties p ON t.property_id = p.property_id WHERE p.owner_id = %s"
             params.append(uid)
+        elif role == 'admin':
+            pass
         else:
             raise HTTPException(403, "Unauthorized")
             
@@ -96,12 +101,24 @@ def get_tenancies(request: Request, status: Optional[str] = None, property_id: O
             
         cur.execute(query, params)
         rows = cur.fetchall()
-        return {"tenancies": [{"id": r[0], "status": r[1], "rent": r[2], "property_id": r[3], "bed_id": r[4], "check_in_date": r[5]} for r in rows]}
+        return {
+            "tenancies": [
+                {
+                    "id": str(r[0]),
+                    "status": r[1],
+                    "rent": float(r[2]) if r[2] is not None else 0.0,
+                    "property_id": str(r[3]),
+                    "bed_id": str(r[4]) if r[4] else None,
+                    "check_in_date": r[5].isoformat() if hasattr(r[5], 'isoformat') else r[5]
+                }
+                for r in rows
+            ]
+        }
 
 @router.get("/tenancies/{tenancy_id}")
-def get_tenancy_detail(request: Request, tenancy_id: str):
-    conn = get_db_connection(request)
-    uid = get_uid(request)
+def get_tenancy_detail(request: Request, tenancy_id: str, conn: psycopg.Connection = Depends(get_db_connection)):
+    claims = _decode_token(request)
+    uid = get_uid(claims)
     with conn.cursor() as cur:
         cur.execute("""
             SELECT t.tenancy_id, t.status, t.student_id, p.owner_id, sp.id_proof_url
@@ -132,9 +149,9 @@ def get_tenancy_detail(request: Request, tenancy_id: str):
         }
 
 @router.post("/tenancies/{tenancy_id}/notice")
-def give_notice(request: Request, tenancy_id: str, data: NoticeRequest):
-    conn = get_db_connection(request)
-    uid = get_uid(request)
+def give_notice(request: Request, tenancy_id: str, data: NoticeRequest, conn: psycopg.Connection = Depends(get_db_connection)):
+    claims = _decode_token(request)
+    uid = get_uid(claims)
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT give_notice(%s, %s, %s)", (tenancy_id, uid, data.notice_date))
@@ -149,9 +166,9 @@ def give_notice(request: Request, tenancy_id: str, data: NoticeRequest):
         raise HTTPException(500, detail=str(e))
 
 @router.post("/tenancies/{tenancy_id}/room-transfer")
-def room_transfer(request: Request, tenancy_id: str, data: RoomTransferRequest):
-    conn = get_db_connection(request)
-    owner_id = require_role(request, "owner")
+def room_transfer(request: Request, tenancy_id: str, data: RoomTransferRequest, conn: psycopg.Connection = Depends(get_db_connection)):
+    claims = require_role(request, "owner")
+    owner_id = claims.get("sub", "")
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT room_transfer(%s, %s, %s, %s)", (tenancy_id, owner_id, data.new_bed_id, data.effective_date))
@@ -165,9 +182,9 @@ def room_transfer(request: Request, tenancy_id: str, data: RoomTransferRequest):
         raise HTTPException(500, detail=str(e))
 
 @router.post("/tenancies/{tenancy_id}/check-out")
-def check_out(request: Request, tenancy_id: str, data: CheckOutRequest):
-    conn = get_db_connection(request)
-    owner_id = require_role(request, "owner")
+def check_out(request: Request, tenancy_id: str, data: CheckOutRequest, conn: psycopg.Connection = Depends(get_db_connection)):
+    claims = require_role(request, "owner")
+    owner_id = claims.get("sub", "")
     try:
         with conn.cursor() as cur:
             deductions_json = json.dumps([d.dict() for d in data.deductions])
@@ -185,9 +202,9 @@ def check_out(request: Request, tenancy_id: str, data: CheckOutRequest):
         raise HTTPException(500, detail=str(e))
 
 @router.post("/tenancies/{tenancy_id}/evict")
-def evict_tenant(request: Request, tenancy_id: str, data: EvictRequest):
-    conn = get_db_connection(request)
-    owner_id = require_role(request, "owner")
+def evict_tenant(request: Request, tenancy_id: str, data: EvictRequest, conn: psycopg.Connection = Depends(get_db_connection)):
+    claims = require_role(request, "owner")
+    owner_id = claims.get("sub", "")
     try:
         with conn.cursor() as cur:
             deductions_json = json.dumps([d.dict() for d in data.deductions])
@@ -205,9 +222,9 @@ def evict_tenant(request: Request, tenancy_id: str, data: EvictRequest):
         raise HTTPException(500, detail=str(e))
 
 @router.get("/tenancies/{tenancy_id}/deposit-ledger")
-def get_ledger(request: Request, tenancy_id: str):
-    conn = get_db_connection(request)
-    uid = get_uid(request)
+def get_ledger(request: Request, tenancy_id: str, conn: psycopg.Connection = Depends(get_db_connection)):
+    claims = _decode_token(request)
+    uid = get_uid(claims)
     with conn.cursor() as cur:
         # Check permission
         cur.execute("""
@@ -227,9 +244,9 @@ class MarkProcessedRequest(BaseModel):
     reference_no: str
 
 @router.post("/refunds/{refund_id}/mark-processed")
-def mark_refund_processed(request: Request, refund_id: str, data: MarkProcessedRequest):
-    conn = get_db_connection(request)
-    owner_id = require_role(request, "owner")
+def mark_refund_processed(request: Request, refund_id: str, data: MarkProcessedRequest, conn: psycopg.Connection = Depends(get_db_connection)):
+    claims = require_role(request, "owner")
+    owner_id = claims.get("sub", "")
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT mark_refund_processed(%s, %s, %s)", (refund_id, owner_id, data.reference_no))
@@ -240,9 +257,9 @@ def mark_refund_processed(request: Request, refund_id: str, data: MarkProcessedR
         raise HTTPException(400, detail=str(e))
 
 @router.post("/bookings/{booking_id}/no-show-decision")
-def no_show_decision(request: Request, booking_id: str, data: NoShowDecision):
-    conn = get_db_connection(request)
-    owner_id = require_role(request, "owner")
+def no_show_decision(request: Request, booking_id: str, data: NoShowDecision, conn: psycopg.Connection = Depends(get_db_connection)):
+    claims = require_role(request, "owner")
+    owner_id = claims.get("sub", "")
     try:
         with conn.cursor() as cur:
             # mock for now
@@ -254,9 +271,9 @@ def no_show_decision(request: Request, booking_id: str, data: NoShowDecision):
         raise HTTPException(400, detail=str(e))
 
 @router.get("/tenancies/{tenancy_id}/agreement")
-def get_agreement(request: Request, tenancy_id: str):
-    conn = get_db_connection(request)
-    uid = get_uid(request)
+def get_agreement(request: Request, tenancy_id: str, conn: psycopg.Connection = Depends(get_db_connection)):
+    claims = _decode_token(request)
+    uid = get_uid(claims)
     with conn.cursor() as cur:
         cur.execute("""
             SELECT t.agreement_url, t.student_id, p.owner_id

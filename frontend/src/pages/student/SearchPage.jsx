@@ -129,6 +129,10 @@ export default function SearchPage() {
   const toggleWishlist = async (propertyId, e) => {
     e.preventDefault();
     if (!token) return navigate('/login');
+    if (user?.role !== 'student') {
+      alert('Only students can add properties to their wishlist.');
+      return;
+    }
     const isSaved = wishlistSet.has(propertyId);
     try {
       const res = await fetch(`${API}/wishlist${isSaved ? `/${propertyId}` : ''}`, {
@@ -142,8 +146,13 @@ export default function SearchPage() {
           isSaved ? next.delete(propertyId) : next.add(propertyId);
           return next;
         });
+      } else {
+        const data = await res.json();
+        alert(data.detail || 'Failed to update wishlist');
       }
-    } catch (e) {}
+    } catch (e) {
+      alert('Error updating wishlist: ' + e.message);
+    }
   };
 
   const todayStr = new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -279,7 +288,7 @@ export default function SearchPage() {
                 </button>
               }
             >
-              <div className="p-5">
+              <div className="p-5 w-72">
                 <h4 className="font-bold text-brand-navy mb-4">Price range (monthly)</h4>
                 <div className="flex gap-4 mb-4">
                   <div>
@@ -305,7 +314,7 @@ export default function SearchPage() {
                 </button>
               }
             >
-              <div className="p-5">
+              <div className="p-5 w-72">
                 <h4 className="font-bold text-brand-navy mb-3">Room Type</h4>
                 <div className="flex flex-col gap-2 mb-4">
                   {['', 'single', 'double', 'triple'].map(t => (
@@ -434,6 +443,7 @@ export default function SearchPage() {
               zoom={12} 
               onBoundsChanged={setBounds}
               autoLocate={true}
+              properties={mapMarkers}
             >
               {mapMarkers.map(m => (
                 <PropertyMarker

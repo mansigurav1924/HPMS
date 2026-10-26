@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import StudentLayout from './layouts/StudentLayout';
 import DashboardLayout from './layouts/DashboardLayout';
 
+import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import OwnerKYC from './pages/owner/OwnerKYC';
@@ -71,7 +72,7 @@ function MainContent() {
         className="h-full flex flex-col"
       >
         <Routes location={location}>
-          <Route path="/" element={<Navigate to="/search" replace />} />
+          <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
 
@@ -92,6 +93,16 @@ function MainContent() {
             <Route path="/student/reviews" element={<ProtectedRoute role="student"><ReviewsPage /></ProtectedRoute>} />
             <Route path="/student/profile" element={<ProtectedRoute role="student"><ProfilePage /></ProtectedRoute>} />
             <Route path="/student/dashboard" element={<ProtectedRoute role="student"><StudentDashboard /></ProtectedRoute>} />
+
+            {/* Shorthand / backward-compatibility redirects */}
+            <Route path="/stay" element={<Navigate to="/student/stay" replace />} />
+            <Route path="/bookings" element={<Navigate to="/student/bookings" replace />} />
+            <Route path="/rent" element={<Navigate to="/student/rent" replace />} />
+            <Route path="/notices" element={<Navigate to="/student/notices" replace />} />
+            <Route path="/notifications" element={<Navigate to="/student/notifications" replace />} />
+            <Route path="/reviews" element={<Navigate to="/student/reviews" replace />} />
+            <Route path="/profile" element={<Navigate to="/student/profile" replace />} />
+            <Route path="/dashboard" element={<Navigate to="/student/dashboard" replace />} />
           </Route>
 
           {/* Owner Routes (DashboardLayout) */}
@@ -130,6 +141,9 @@ function MainContent() {
           <Route path="/unauthorized" element={
             <div className="text-center mt-20 text-red-600 text-2xl font-bold">Unauthorized Access</div>
           } />
+
+          {/* Wildcard catch-all fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </motion.div>
     </AnimatePresence>

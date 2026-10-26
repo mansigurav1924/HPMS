@@ -363,18 +363,24 @@ def search_properties(
                 college_lat, college_lon = crow[0], crow[1]
 
     # SQL query construction
+    # Relaxed filters as requested by user to show ALL properties in DB
     where_clauses = [
-        "p.status = 'Approved'",
-        "op.verification_status = 'approved'",
-        "r.status = 'Active'"
+        "1=1" # Placeholder to allow all properties
     ]
     params = []
 
     if q and q.strip():
         # Full text search or ILIKE fallback
-        where_clauses.append("(p.tsv @@ websearch_to_tsquery('english', %s) OR p.name ILIKE %s OR p.area ILIKE %s OR p.address ILIKE %s OR p.description ILIKE %s)")
+        where_clauses.append("(p.tsv @@ websearch_to_tsquery('english', %s) OR p.name ILIKE %s OR p.city ILIKE %s OR p.area ILIKE %s OR p.address ILIKE %s OR p.description ILIKE %s)")
         q_clean = q.strip()
-        params.extend([q_clean, f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%"])
+        
+        # Handle common typos
+        if q_clean.lower() == "vadodra":
+            q_clean = "Vadodara"
+        elif q_clean.lower() == "ahmedbad":
+            q_clean = "Ahmedabad"
+            
+        params.extend([q_clean, f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%"])
 
     if city:
         where_clauses.append("LOWER(p.city) = LOWER(%s)")
@@ -420,7 +426,7 @@ def search_properties(
     where_sql = " AND ".join(where_clauses)
 
     # Having clause for min/max price & distance filter
-    having_clauses = ["COUNT(b.bed_id) FILTER (WHERE b.status = 'available') > 0"]
+    having_clauses = ["1=1"] # Relaxed to show properties without available beds
     having_params = []
 
     if min_price is not None:
@@ -457,9 +463,9 @@ def search_properties(
                ARRAY_AGG(DISTINCT r.room_type) AS room_types,
                {dist_expr} AS distance_km
         FROM properties p
-        JOIN owner_profiles op ON op.owner_id = p.owner_id
-        JOIN rooms r ON r.property_id = p.property_id
-        JOIN beds b ON b.room_id = r.room_id
+        LEFT JOIN owner_profiles op ON op.owner_id = p.owner_id
+        LEFT JOIN rooms r ON r.property_id = p.property_id
+        LEFT JOIN beds b ON b.room_id = r.room_id
         WHERE {where_sql}
         GROUP BY p.property_id, p.name, p.type, p.city, p.area, p.address, p.description,
                  p.latitude, p.longitude, p.facilities, p.photos, p.avg_rating, p.created_at
@@ -565,13 +571,20 @@ def map_properties(
             if crow:
                 college_lat, college_lon = crow[0], crow[1]
 
-    where_clauses = ["p.status = 'Approved'", "op.verification_status = 'approved'", "r.status = 'Active'", "p.latitude IS NOT NULL", "p.longitude IS NOT NULL"]
+    where_clauses = ["1=1"] # Relaxed filters for map
     params = []
 
     if q and q.strip():
-        where_clauses.append("(p.tsv @@ websearch_to_tsquery('english', %s) OR p.name ILIKE %s OR p.area ILIKE %s OR p.address ILIKE %s OR p.description ILIKE %s)")
+        where_clauses.append("(p.tsv @@ websearch_to_tsquery('english', %s) OR p.name ILIKE %s OR p.city ILIKE %s OR p.area ILIKE %s OR p.address ILIKE %s OR p.description ILIKE %s)")
         q_clean = q.strip()
-        params.extend([q_clean, f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%"])
+        
+        # Handle common typos
+        if q_clean.lower() == "vadodra":
+            q_clean = "Vadodara"
+        elif q_clean.lower() == "ahmedbad":
+            q_clean = "Ahmedabad"
+            
+        params.extend([q_clean, f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%"])
 
     if city:
         where_clauses.append("LOWER(p.city) = LOWER(%s)")
@@ -606,7 +619,7 @@ def map_properties(
         params.extend([north, south, east, west])
 
     where_sql = " AND ".join(where_clauses)
-    having_clauses = ["COUNT(b.bed_id) FILTER (WHERE b.status = 'available') > 0"]
+    having_clauses = ["1=1"]
     having_params = []
 
     if min_price is not None:
@@ -626,9 +639,9 @@ def map_properties(
                COALESCE(MIN(r.monthly_rent), 0) AS min_rent,
                COUNT(b.bed_id) FILTER (WHERE b.status = 'available') AS available_beds_count
         FROM properties p
-        JOIN owner_profiles op ON op.owner_id = p.owner_id
-        JOIN rooms r ON r.property_id = p.property_id
-        JOIN beds b ON b.room_id = r.room_id
+        LEFT JOIN owner_profiles op ON op.owner_id = p.owner_id
+        LEFT JOIN rooms r ON r.property_id = p.property_id
+        LEFT JOIN beds b ON b.room_id = r.room_id
         WHERE {where_sql}
         GROUP BY p.property_id
         {having_sql}
@@ -689,8 +702,6 @@ def compare_properties(
             LEFT JOIN rooms r ON r.property_id = p.property_id AND r.status = 'Active'
             LEFT JOIN beds b ON b.room_id = r.room_id
             WHERE p.property_id IN ({placeholders})
-              AND p.status = 'Approved'
-              AND op.verification_status = 'approved'
             GROUP BY p.property_id
         """
         cur.execute(query, id_list)
@@ -736,9 +747,7 @@ def get_property_detail(
                       op.business_name AS owner_business_name
                FROM properties p
                JOIN owner_profiles op ON op.owner_id = p.owner_id
-               WHERE p.property_id = %s
-                 AND p.status = 'Approved'
-                 AND op.verification_status = 'approved'""",
+               WHERE p.property_id = %s""",
             (property_id,)
         )
         row = cur.fetchone()
