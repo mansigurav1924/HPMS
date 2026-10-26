@@ -11,3 +11,4 @@ python-multipart
 celery
 redis
 jinja2
+bleach
